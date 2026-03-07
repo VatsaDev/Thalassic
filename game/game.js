@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNoise2D } from 'https://unpkg.com/simplex-noise@4.0.1/dist/esm/simplex-noise.js';
 
 /**
@@ -111,27 +112,69 @@ const foliageFragmentShader = `
  */
 
 // 1. Tapered Grass Geometry (A 3D "Blade" made of triangles)
+
 function createGrassGeometry() {
-    const geo = new THREE.BufferGeometry();
-    const width = 0.3;
-    const height = 2.5;
-    // 12 Triangles per blade
-    const vertices = new Float32Array([
-        -width, 0, 0,  width, 0, 0,  0, height, 0,         // Front face
-        -width, 0, 0,  0, height, 0,  width, 0, 0,         // Back face
-        0, 0, -width,  0, 0, width,  0, height, 0,         // Side 1
-        0, 0, -width,  0, height, 0,  0, 0, width          // Side 2
-    ]);
-    geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-    geo.computeVertexNormals();
-    return geo;
+    const geometries = [];
+    const bladeCount = 25; // Grow 25 blades in a cluster
+    const radius = 1.5;   // Spreading area
+
+    for (let i = 0; i < bladeCount; i++) {
+        const width = 0.15 + Math.random() * 0.1;
+        const height = 1.5 + Math.random() * 1.5;
+        
+        // Define one blade
+        const geo = new THREE.BufferGeometry();
+        const vertices = new Float32Array([
+            -width, 0, 0,  width, 0, 0,  0, height, 0, // Front
+            -width, 0, 0,  0, height, 0,  width, 0, 0, // Back
+            0, 0, -width,  0, 0, width,  0, height, 0, // Side 1
+            0, 0, -width,  0, height, 0,  0, 0, width  // Side 2
+        ]);
+        geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+
+        // Randomly position and rotate each blade within the cluster
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.sqrt(Math.random()) * radius;
+        geo.rotateY(Math.random() * Math.PI);
+        geo.translate(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+
+        geometries.push(geo);
+    }
+
+    // Merge all blades into one geometry
+    const mergedGeo = THREE.BufferGeometryUtils.mergeGeometries(geometries);
+    mergedGeo.computeVertexNormals();
+    return mergedGeo;
 }
 
 // 2. Low-Poly Pine Tree Geometry
 function createPineGeometry() {
-    const geo = new THREE.ConeGeometry(3, 12, 6);
-    geo.translate(0, 6, 0); // Offset to ground
-    return geo;
+    const tiers = [];
+    
+    // 1. The Trunk (Cylinder)
+    const trunkGeo = new THREE.CylinderGeometry(0.5, 0.7, 3, 6);
+    trunkGeo.translate(0, 1.5, 0); // Lift so bottom is at 0
+    tiers.push(trunkGeo);
+
+    // 2. The Leaves (Stacked Cones)
+    const tierCount = 3;
+    for (let i = 0; i < tierCount; i++) {
+        const size = 4 - (i * 0.8);   // Bottom tier is widest
+        const height = 5 - (i * 0.5); // Each tier slightly shorter
+        
+        // Use 6-8 segments for that "low poly" look from your image
+        const cone = new THREE.ConeGeometry(size, height, 7); 
+        
+        // Stack them vertically with an overlap
+        const yPos = 3 + (i * 2.5); 
+        cone.translate(0, yPos, 0);
+        
+        tiers.push(cone);
+    }
+
+    const mergedTree = THREE.BufferGeometryUtils.mergeGeometries(tiers);
+    mergedTree.computeVertexNormals();
+    return mergedTree;
 }
 
 const grassMat = new THREE.ShaderMaterial({
