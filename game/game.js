@@ -6,7 +6,8 @@ const socket = io(SERVER_URL);
 
 // --- SCENE SETUP ---
 const scene = new THREE.Scene();
-// 1. SKYBOX & LIGHTING (Warm, Vibrant "Asset Pack" Style)
+
+// 1. SKY & FOG (Crisp, not blurry)
 const vertexShader = `
     varying vec3 vWorldPosition;
     void main() {
@@ -24,134 +25,140 @@ const fragmentShader = `
         gl_FragColor = vec4( mix( bottomColor, topColor, max( h, 0.0 ) ), 1.0 );
     }
 `;
-const skyGeo = new THREE.SphereGeometry(15000, 32, 15);
 const skyMat = new THREE.ShaderMaterial({
     vertexShader, fragmentShader,
     uniforms: {
-        topColor: { value: new THREE.Color(0x3399ff) }, // Deep Sky Blue
-        bottomColor: { value: new THREE.Color(0xffeebb) } // Warm Sunset Horizon
+        topColor: { value: new THREE.Color(0x0077ff) },
+        bottomColor: { value: new THREE.Color(0xffffff) }
     },
     side: THREE.BackSide
 });
+const skyGeo = new THREE.SphereGeometry(20000, 32, 15);
 scene.add(new THREE.Mesh(skyGeo, skyMat));
 
-// Fog to blend mountains into sky
-scene.fog = new THREE.Fog(0xffeebb, 500, 9000);
+// Fog that blends the distant chunks
+scene.fog = new THREE.Fog(0xffffff, 1000, 8000);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 20000);
-const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true }); // Log depth for huge draw distance
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 20000);
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping; // Better colors
-renderer.toneMappingExposure = 1.1;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
+renderer.setPixelRatio(window.devicePixelRatio);
 document.body.appendChild(renderer.domElement);
 
-// Lighting
+// --- LIGHTING ---
 const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
 scene.add(hemiLight);
 
-const sun = new THREE.DirectionalLight(0xfff0dd, 1.5);
-sun.position.set(1000, 3000, 1000);
+const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+sun.position.set(2000, 3000, 2000);
 sun.castShadow = true;
-// Optimize Shadow Map for Giant World
-sun.shadow.camera.left = -3000; sun.shadow.camera.right = 3000;
-sun.shadow.camera.top = 3000; sun.shadow.camera.bottom = -3000;
-sun.shadow.camera.far = 10000;
-sun.shadow.bias = -0.0005;
 sun.shadow.mapSize.set(4096, 4096);
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 10000;
+const d = 4000;
+sun.shadow.camera.left = -d; sun.shadow.camera.right = d;
+sun.shadow.camera.top = d; sun.shadow.camera.bottom = -d;
+sun.shadow.bias = -0.0001;
 scene.add(sun);
 
-// --- TERRAIN GENERATION (EROSION & RIDGE NOISE) ---
+// --- TERRAIN ENGINE (EROSION & DERIVATIVE NOISE) ---
 const WORLD_SIZE = 10000; // 10km
-const CHUNKS_SIDE = 8;    // 8x8 = 64 Chunks
-const CHUNK_SIZE = WORLD_SIZE / CHUNKS_SIDE; // 1250 per chunk
-const SEGMENTS = 100;     // 100x100 verts per chunk (High Res)
+const CHUNKS_SIDE = 8;    // 64 Chunks total
+const CHUNK_SIZE = WORLD_SIZE / CHUNKS_SIDE; 
+const SEGMENTS = 128;     // High vertex density
 
-// Pseudo-Random Noise
-function hash(n) { return Math.sin(n) * 43758.5453123; }
-function noise(x, z) {
-    const fx = Math.floor(x); const fz = Math.floor(z);
-    const cx = x - fx; const cz = z - fz;
-    // Simple interpolation would go here, simplified for brevity in single file
-    return Math.sin(x/5) * Math.cos(z/5); // Placeholder for complex simplex
+// Pseudo-random hash
+function hash(x, z) {
+    let k = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+    return k - Math.floor(k);
 }
 
-// "Ridge Noise" - Creates sharp mountain peaks (Erosion simulation)
+// Cubic interpolation
+function mix(a, b, t) { return a * (1-t) + b * t; }
+function smooth(t) { return t * t * (3 - 2 * t); }
+
+// Value Noise for base shape
+function vNoise(x, z) {
+    let ix = Math.floor(x); let iz = Math.floor(z);
+    let fx = x - ix; let fz = z - iz;
+    let u = smooth(fx); let v = smooth(fz);
+    let a = hash(ix, iz); let b = hash(ix+1, iz);
+    let c = hash(ix, iz+1); let d = hash(ix+1, iz+1);
+    return mix(mix(a, b, u), mix(c, d, u), v);
+}
+
+// "Erosion" Noise - Uses derivative to simulate flow
 function getTerrainHeight(x, z) {
     const dist = Math.sqrt(x*x + z*z);
     
-    // 1. Exponential Mask (Flat center, walls at edge)
-    const maxDist = WORLD_SIZE / 2.2;
-    let mask = Math.pow(Math.min(1.0, dist / maxDist), 2.5);
+    // 1. Exponential Mask (Valley in middle, Mountains at edge)
+    // Using power 2.5 for a wide playable valley
+    const mask = Math.pow(Math.min(1.0, dist / (WORLD_SIZE/2.1)), 2.5);
 
-    // 2. Ridge FBM
-    let h = 0;
+    // 2. Multi-Fractal Noise with "Erosion" Look
+    let y = 0;
     let amp = 1;
-    let freq = 0.003;
+    let freq = 0.002;
     
-    for(let i = 0; i < 5; i++) {
-        // Absolute value of sin creates sharp "creases" (Ridges)
-        let n = 1.0 - Math.abs(Math.sin(x * freq) + Math.cos(z * freq)) * 0.5;
-        // Square it to make ridges sharper
-        n = n * n; 
-        h += n * amp;
+    for (let i = 0; i < 6; i++) {
+        // Absolute value creates sharp ridges (ridges = 1 - abs(noise))
+        let n = 1.0 - Math.abs(Math.sin(x * freq + vNoise(x*freq, z*freq)) + Math.cos(z * freq));
         
-        freq *= 2.1;
-        amp *= 0.45;
+        // Sharpen peaks (power function)
+        n = Math.pow(n, 2.0); 
+        
+        y += n * amp;
+        amp *= 0.45; // Lacunarity
+        freq *= 2.0;
     }
 
-    // 3. Domain Warping (Twists the terrain to look organic)
-    const warp = Math.sin(x * 0.001) * 100;
-
-    return mask * (h * 1600) + (warp * mask); // Scale up to 1.6km height
+    // 3. Scale Height
+    // Max height 1800m at edges
+    return mask * (y * 1800); 
 }
 
-// --- GRASS SHADER SYSTEM ---
-const grassVertexShader = `
-    varying vec2 vUv;
-    uniform float time;
-    void main() {
-        vUv = uv;
-        vec4 pos = vec4(position, 1.0);
-        
-        // Sway Logic (Wind)
-        float sway = sin(time * 2.0 + instanceMatrix[3][0] * 0.5) * 0.3; // Random phase based on X pos
-        // Only sway the top of the grass blade (y > 0)
-        if (pos.y > 0.5) {
-            pos.x += sway;
-        }
-
-        // Instance Matrix handles placement
-        gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * pos;
-    }
-`;
-const grassFragmentShader = `
-    varying vec2 vUv;
-    void main() {
-        // Deep Green Gradient
-        vec3 color = mix(vec3(0.1, 0.3, 0.1), vec3(0.4, 0.8, 0.2), vUv.y);
-        gl_FragColor = vec4(color, 1.0);
-    }
-`;
+// --- GRASS SYSTEM ---
+// Instanced Mesh for performance
+const grassGeo = new THREE.PlaneGeometry(2, 4); // Larger grass blades
 const grassMat = new THREE.ShaderMaterial({
-    vertexShader: grassVertexShader,
-    fragmentShader: grassFragmentShader,
     uniforms: { time: { value: 0 } },
-    side: THREE.DoubleSide
+    side: THREE.DoubleSide,
+    vertexShader: `
+        varying vec2 vUv;
+        uniform float time;
+        void main() {
+            vUv = uv;
+            vec4 pos = vec4(position, 1.0);
+            // Wind Calculation based on world position
+            float wind = sin(time * 2.0 + instanceMatrix[3][0] * 0.1 + instanceMatrix[3][2] * 0.1);
+            if (pos.y > 0.0) { // Only move top of blade
+                pos.x += wind * 0.5;
+            }
+            gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * pos;
+        }
+    `,
+    fragmentShader: `
+        varying vec2 vUv;
+        void main() {
+            vec3 color = mix(vec3(0.1, 0.5, 0.1), vec3(0.4, 0.8, 0.2), vUv.y);
+            if (color.g < 0.2) discard; // Simple alpha test
+            gl_FragColor = vec4(color, 1.0);
+        }
+    `
 });
-const grassGeo = new THREE.PlaneGeometry(1, 2); // Simple blade
 
-// --- CHUNK GENERATION ---
+// --- CHUNK MANAGER ---
 function createChunk(xOffset, zOffset) {
     const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, SEGMENTS, SEGMENTS);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
     
-    // Arrays for grass placement
-    const grassDummy = new THREE.Object3D();
+    // Grass Placement Arrays
     const grassMatrices = [];
+    const grassDummy = new THREE.Object3D();
 
     for (let i = 0; i < pos.count; i++) {
         const x = pos.getX(i) + xOffset;
@@ -159,36 +166,41 @@ function createChunk(xOffset, zOffset) {
         const y = getTerrainHeight(x, z);
         pos.setY(i, y);
 
-        // --- SLOPE CALCULATION ---
-        // Calc simplified slope by checking height of next vertex (approx)
-        const neighborY = getTerrainHeight(x + 5, z);
-        const slope = Math.abs(y - neighborY);
+        // Slope Calculation
+        // Sample neighbors for normal calculation proxy
+        const hR = getTerrainHeight(x+10, z);
+        const hL = getTerrainHeight(x-10, z);
+        const hD = getTerrainHeight(x, z+10);
+        const hU = getTerrainHeight(x, z-10);
+        
+        // Approximate slope vector magnitude
+        const slope = Math.sqrt(Math.pow(hR-hL, 2) + Math.pow(hD-hU, 2)) / 20.0;
 
         const color = new THREE.Color();
-        
-        // Texturing Logic
-        if (y > 1100) { // High Peaks
-            color.setHex(0xffffff); // Snow
-        } else if (slope > 1.5) { // Steep = Rock
-            color.setHex(0x555555); // Grey Rock
-        } else if (y < 200 && slope < 0.5) { // Low & Flat = Grass
-            // "Deeper" Grass Color
-            const noiseVar = Math.sin(x*0.1) * Math.cos(z*0.1); // Color variation
-            color.setHex(0x2d5a27); // Deep Green
-            color.lerp(new THREE.Color(0x3a6b32), noiseVar * 0.5);
 
-            // Chance to spawn grass blade (only in center valley to save FPS)
-            if (Math.random() > 0.96 && Math.abs(x) < 3000 && Math.abs(z) < 3000) {
-                grassDummy.position.set(x + (Math.random()-0.5)*10, y, z + (Math.random()-0.5)*10);
-                grassDummy.scale.set(1 + Math.random(), 1 + Math.random(), 1);
+        // Biome Logic
+        if (y > 1200) { 
+            color.setHex(0xffffff); // Snow
+        } else if (slope > 1.2) { 
+            color.setHex(0x505050); // Dark Cliff Rock
+        } else if (y < 200) { 
+            color.setHex(0x228B22); // Forest Green
+            
+            // Grass Spawning (Only in low green areas)
+            // Use random chance + density map
+            if (Math.random() > 0.985) {
+                grassDummy.position.set(x + (Math.random()-0.5)*5, y, z + (Math.random()-0.5)*5);
+                grassDummy.scale.setScalar(0.8 + Math.random()*0.5);
                 grassDummy.rotation.y = Math.random() * Math.PI;
                 grassDummy.updateMatrix();
                 grassMatrices.push(grassDummy.matrix.clone());
             }
-
         } else {
-            color.setHex(0x605538); // Dirt/Tundra
+            color.setHex(0x5c5038); // Brown/Tundra
         }
+        
+        // Add some noise to color to remove "banding"
+        color.offsetHSL(0, 0, (Math.random() - 0.5) * 0.05);
 
         colors[i * 3] = color.r;
         colors[i * 3 + 1] = color.g;
@@ -199,89 +211,96 @@ function createChunk(xOffset, zOffset) {
     geo.computeVertexNormals();
 
     const group = new THREE.Group();
-    const terrainMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ 
-        vertexColors: true, 
-        roughness: 0.9,
-        flatShading: true // Requested Low Poly Look
-    }));
-    terrainMesh.position.set(xOffset, 0, zOffset);
-    terrainMesh.receiveShadow = true;
-    terrainMesh.castShadow = true;
-    group.add(terrainMesh);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
+    mesh.position.set(xOffset, 0, zOffset);
+    mesh.receiveShadow = true;
+    mesh.castShadow = true;
+    group.add(mesh);
 
-    // Add Grass InstancedMesh
+    // Add Grass Batch
     if (grassMatrices.length > 0) {
-        const mesh = new THREE.InstancedMesh(grassGeo, grassMat, grassMatrices.length);
+        const grassMesh = new THREE.InstancedMesh(grassGeo, grassMat, grassMatrices.length);
         for(let k=0; k<grassMatrices.length; k++) {
-            mesh.setMatrixAt(k, grassMatrices[k]);
+            grassMesh.setMatrixAt(k, grassMatrices[k]);
         }
-        mesh.position.set(xOffset, 0, zOffset); // Relative offset not needed if positions were absolute, but safe
-        scene.add(mesh); // Add directly to scene to avoid parenting offset issues
+        grassMesh.position.set(xOffset, 0, zOffset);
+        // Important: Frustum culling can be tricky with InstancedMesh if bounding sphere isn't set, 
+        // but for this simple setup it usually defaults to the origin. We'll disable culling for grass to prevent popping.
+        grassMesh.frustumCulled = false; 
+        scene.add(grassMesh);
     }
 
     return group;
 }
 
-// Generate 8x8 Grid (64 Chunks)
-const offset = (WORLD_SIZE / 2) - (CHUNK_SIZE / 2);
-for(let x = 0; x < CHUNKS_SIDE; x++) {
-    for(let z = 0; z < CHUNKS_SIDE; z++) {
+// Generate the 8x8 Grid
+for (let x = 0; x < CHUNKS_SIDE; x++) {
+    for (let z = 0; z < CHUNKS_SIDE; z++) {
         const xPos = (x * CHUNK_SIZE) - (WORLD_SIZE/2) + (CHUNK_SIZE/2);
         const zPos = (z * CHUNK_SIZE) - (WORLD_SIZE/2) + (CHUNK_SIZE/2);
         scene.add(createChunk(xPos, zPos));
     }
 }
 
-// --- PLAYER SYSTEM ---
-const players = {}; 
+// --- PLAYER & CAMERA ---
+const players = {};
 let myMesh = null;
 
 const state = {
     x: 0, y: 50, z: 0,
-    yVel: 0, 
-    // Camera Angles
-    camYaw: 0, 
-    camPitch: 0.3,
-    
-    // Mechanics
+    yVel: 0,
+    yaw: 0, pitch: 0,
+    zoomLevel: 30,
     jumpCount: 0, isGrounded: false,
-    lastDash: 0, dashVel: { x: 0, z: 0 }
+    dashVel: { x: 0, z: 0 },
+    lastDash: 0
 };
 
-// --- CONTROLS (WASD MOVE, ARROWS CAM) ---
+// Pointer Lock
+document.body.addEventListener('click', () => {
+    document.body.requestPointerLock();
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (document.pointerLockElement === document.body) {
+        state.yaw -= e.movementX * 0.002;
+        state.pitch -= e.movementY * 0.002;
+        // Clamp pitch to avoid flipping over
+        state.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, state.pitch));
+    }
+});
+
 const keys = {};
 document.addEventListener('keydown', (e) => {
     keys[e.code] = true;
-    // Jump
     if (e.code === 'Space') {
-        if (state.isGrounded) { state.yVel = 1.8; state.jumpCount = 1; state.isGrounded = false; } // Stronger Jump
+        if (state.isGrounded) { state.yVel = 1.6; state.jumpCount = 1; state.isGrounded = false; }
         else if (state.jumpCount < 2) { state.yVel = 1.4; state.jumpCount = 2; }
     }
-    // Dash
-    if (e.code === 'KeyQ') {
+    if (e.code === 'KeyQ') { // DASH
         const now = Date.now();
         if (now - state.lastDash > 500) {
-            // Dash in direction of camera facing
-            state.dashVel.x = Math.sin(state.camYaw) * 12.0; 
-            state.dashVel.z = Math.cos(state.camYaw) * 12.0;
+            // Dash towards where camera is facing (horizontal only)
+            state.dashVel.x = -Math.sin(state.yaw) * 12.0;
+            state.dashVel.z = -Math.cos(state.yaw) * 12.0;
             state.lastDash = now;
         }
     }
 });
 document.addEventListener('keyup', (e) => keys[e.code] = false);
 
-// --- HELPERS ---
+// --- HELPER: PLAYER MESH ---
 function createPlayerMesh(data) {
     const group = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshStandardMaterial({ color: data.color }));
-    body.castShadow = true;
-    group.add(body);
-    
+    const cube = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshStandardMaterial({ color: data.color }));
+    cube.castShadow = true;
+    group.add(cube);
+
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     canvas.width = 256; canvas.height = 64;
-    ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.roundRect(0,0,256,64,10); ctx.fill();
-    ctx.font = "bold 30px Arial"; ctx.fillStyle = "white"; ctx.textAlign="center";
+    ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.roundRect(0,0,256,64,12); ctx.fill();
+    ctx.font = "bold 32px Arial"; ctx.fillStyle = "white"; ctx.textAlign="center";
     ctx.fillText(data.name, 128, 42);
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
     sprite.scale.set(6, 1.5, 1);
@@ -290,19 +309,19 @@ function createPlayerMesh(data) {
     return group;
 }
 
-// --- NETWORKING ---
-socket.on('currentPlayers', (sP) => {
-    Object.keys(sP).forEach(id => {
-        if (!players[id]) {
-            players[id] = createPlayerMesh(sP[id]);
+// --- SOCKETS ---
+socket.on('currentPlayers', (srvPlayers) => {
+    Object.keys(srvPlayers).forEach(id => {
+        if(!players[id]) {
+            players[id] = createPlayerMesh(srvPlayers[id]);
             scene.add(players[id]);
-            if (id === socket.id) myMesh = players[id];
+            if(id === socket.id) myMesh = players[id];
         }
     });
 });
 socket.on('newPlayer', (d) => { players[d.id] = createPlayerMesh(d.player); scene.add(players[d.id]); });
-socket.on('playerMoved', (d) => { if (d.id !== socket.id && players[d.id]) players[d.id].position.set(d.x, d.y, d.z); });
-socket.on('playerDisconnected', (id) => { if(players[id]) { scene.remove(players[id]); delete players[id]; } });
+socket.on('playerMoved', (d) => { if(d.id !== socket.id && players[d.id]) players[d.id].position.set(d.x, d.y, d.z); });
+socket.on('playerDisconnected', (id) => { if(players[id]) { scene.remove(players[id]); delete players[id]; }});
 
 // --- MAIN LOOP ---
 const clock = new THREE.Clock();
@@ -311,48 +330,48 @@ function animate() {
     requestAnimationFrame(animate);
     const time = clock.getElapsedTime();
     
-    // Update Wind Shader
+    // Animate Grass
     grassMat.uniforms.time.value = time;
 
     if (myMesh) {
-        // 1. CAMERA ORBIT (ARROWS)
-        if (keys['ArrowLeft']) state.camYaw += 0.04;
-        if (keys['ArrowRight']) state.camYaw -= 0.04;
-        if (keys['ArrowUp']) state.camPitch = Math.min(Math.PI/2.5, state.camPitch + 0.03);
-        if (keys['ArrowDown']) state.camPitch = Math.max(0.1, state.camPitch - 0.03);
+        // 1. ZOOM I/O
+        if (keys['KeyI']) state.zoomLevel = Math.max(0, state.zoomLevel - 1);
+        if (keys['KeyO']) state.zoomLevel = Math.min(200, state.zoomLevel + 1);
 
-        // 2. MOVEMENT (WASD - Relative to Camera)
-        let moveX = 0; 
-        let moveZ = 0;
-        const sprint = keys['ShiftLeft'] ? 2.0 : 0.8;
+        // 2. MOVEMENT (WASD relative to Yaw)
+        const sprint = keys['ShiftLeft'] ? 2.5 : 1.0;
+        let mx = 0, mz = 0;
+        
+        // Standard FPS WASD Calculation
+        // W moves forward (-z), S moves back (+z)
+        if (keys['KeyW']) { mx -= Math.sin(state.yaw); mz -= Math.cos(state.yaw); }
+        if (keys['KeyS']) { mx += Math.sin(state.yaw); mz += Math.cos(state.yaw); }
+        if (keys['KeyA']) { mx -= Math.sin(state.yaw + Math.PI/2); mz -= Math.cos(state.yaw + Math.PI/2); }
+        if (keys['KeyD']) { mx += Math.sin(state.yaw + Math.PI/2); mz += Math.cos(state.yaw + Math.PI/2); }
 
-        if (keys['KeyW']) { moveX += Math.sin(state.camYaw); moveZ += Math.cos(state.camYaw); }
-        if (keys['KeyS']) { moveX -= Math.sin(state.camYaw); moveZ -= Math.cos(state.camYaw); }
-        if (keys['KeyA']) { moveX += Math.sin(state.camYaw + Math.PI/2); moveZ += Math.cos(state.camYaw + Math.PI/2); }
-        if (keys['KeyD']) { moveX -= Math.sin(state.camYaw + Math.PI/2); moveZ -= Math.cos(state.camYaw + Math.PI/2); }
-
-        // Normalize vector so diagonal isn't faster
-        if (moveX !== 0 || moveZ !== 0) {
-            const len = Math.sqrt(moveX*moveX + moveZ*moveZ);
-            state.x += (moveX / len) * sprint;
-            state.z += (moveZ / len) * sprint;
-            
-            // Rotate player mesh to face movement direction
-            myMesh.rotation.y = Math.atan2(moveX, moveZ);
+        if (mx !== 0 || mz !== 0) {
+            const len = Math.sqrt(mx*mx + mz*mz);
+            state.x += (mx/len) * sprint;
+            state.z += (mz/len) * sprint;
+            // Face direction of movement
+            myMesh.rotation.y = Math.atan2(-mx, -mz); // Flip for mesh facing
+        } else {
+            // If idle, match camera yaw
+            myMesh.rotation.y = state.yaw; // Match camera
         }
 
         // Apply Dash
-        state.x += state.dashVel.x; 
+        state.x += state.dashVel.x;
         state.z += state.dashVel.z;
         state.dashVel.x *= 0.9; state.dashVel.z *= 0.9;
 
-        // 3. PHYSICS
-        state.yVel -= 0.06; // Gravity
+        // 3. GRAVITY & COLLISION
+        state.yVel -= 0.05;
         state.y += state.yVel;
 
-        const terrainH = getTerrainHeight(state.x, state.z);
-        if (state.y < terrainH + 1.0) {
-            state.y = terrainH + 1.0;
+        const groundH = getTerrainHeight(state.x, state.z);
+        if (state.y < groundH + 1.0) {
+            state.y = groundH + 1.0;
             state.yVel = 0;
             state.isGrounded = true;
             state.jumpCount = 0;
@@ -360,15 +379,31 @@ function animate() {
 
         myMesh.position.set(state.x, state.y, state.z);
 
-        // 4. CAMERA FOLLOW
-        const zoom = 40;
-        camera.position.set(
-            state.x - Math.sin(state.camYaw) * zoom * Math.cos(state.camPitch),
-            state.y + zoom * Math.sin(state.camPitch),
-            state.z - Math.cos(state.camYaw) * zoom * Math.cos(state.camPitch)
-        );
-        camera.lookAt(state.x, state.y + 5, state.z);
+        // 4. CAMERA LOGIC
+        if (state.zoomLevel < 1) {
+            // First Person
+            myMesh.visible = false;
+            camera.position.set(state.x, state.y + 1, state.z);
+            // In FPS, camera rotation is pure yaw/pitch
+            camera.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
+        } else {
+            // Third Person (Orbit)
+            myMesh.visible = true;
+            
+            // Calculate target camera position
+            const cx = state.x + Math.sin(state.yaw) * state.zoomLevel * Math.cos(state.pitch);
+            const cz = state.z + Math.cos(state.yaw) * state.zoomLevel * Math.cos(state.pitch);
+            const cy = state.y + state.zoomLevel * Math.sin(-state.pitch) + 5; // +5 looks over shoulder
 
+            // Camera Collision Check (Don't clip through mountains)
+            // We sample the terrain at the camera's potential position
+            const camGroundH = getTerrainHeight(cx, cz);
+            const finalCamY = Math.max(cy, camGroundH + 2); // Stay 2 units above ground minimum
+
+            camera.position.set(cx, finalCamY, cz);
+            camera.lookAt(state.x, state.y + 2, state.z);
+        }
+        
         socket.emit('playerMovement', { x: state.x, y: state.y, z: state.z });
     }
 
