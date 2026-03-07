@@ -6,101 +6,104 @@ const socket = io(SERVER_URL);
 
 // --- SCENE SETUP ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87CEEB); // Sky Blue
-// Add some fog for depth
-scene.fog = new THREE.Fog(0x87CEEB, 10, 100);
+scene.background = new THREE.Color(0x92a1b1); // Gloomy mountain sky
+scene.fog = new THREE.Fog(0x92a1b1, 50, 400); // Farther fog
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 document.body.appendChild(renderer.domElement);
 
 // Lighting
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444);
-hemiLight.position.set(0, 20, 0);
-scene.add(hemiLight);
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const sun = new THREE.DirectionalLight(0xffffff, 1);
+sun.position.set(100, 200, 100);
+sun.castShadow = true;
+scene.add(sun);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.position.set(50, 100, 50);
-dirLight.castShadow = true;
-scene.add(dirLight);
+// --- TERRAIN GENERATION (ADVANCED NOISE) ---
+const WORLD_SIZE = 1000;
+const RESOLUTION = 200; // Vertices per side
 
-// --- TERRAIN GENERATION (NOISE) ---
-// Simple pseudo-random noise function (replacing full Perlin for single-file simplicity)
-function noise(x, z) {
-    const sin = Math.sin;
-    const cos = Math.cos;
-    // Layering waves (Fractal Brownian Motion)
-    return (sin(x / 20) * cos(z / 20) * 4) + 
-           (sin(x / 10 + 1) * cos(z / 10 + 2) * 2) + 
-           (sin(x / 5) * 0.5);
+// Better noise: Fractal Brownian Motion
+function fbm(x, z) {
+    let value = 0;
+    let amplitude = 15; // Base height scale
+    let frequency = 0.01;
+    for (let i = 0; i < 4; i++) {
+        value += (Math.sin(x * frequency) * Math.cos(z * frequency)) * amplitude;
+        frequency *= 2.5;
+        amplitude *= 0.4;
+    }
+    // Boost height for mountains
+    if (value > 5) value += Math.pow(value - 5, 1.5); 
+    return value;
 }
 
 function getTerrainHeight(x, z) {
-    // Return y height at specific coordinate
-    return Math.max(-10, noise(x, z));
+    return fbm(x, z);
 }
 
-// Generate the Mesh
-const worldSize = 400; // 10x larger
-const resolution = 128; // Vertices per axis
-const geometry = new THREE.PlaneGeometry(worldSize, worldSize, resolution, resolution);
-geometry.rotateX(-Math.PI / 2); // Lay flat
+const geometry = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, RESOLUTION, RESOLUTION);
+geometry.rotateX(-Math.PI / 2);
 
-const pos = geometry.attributes.position;
-const colors = [];
-const colorAttribute = new THREE.BufferAttribute(new Float32Array(pos.count * 3), 3);
+const positions = geometry.attributes.position;
+const colors = new Float32Array(positions.count * 3);
 
-// Modify vertices based on noise
-for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const z = pos.getZ(i);
-    
-    // Calculate height
+for (let i = 0; i < positions.count; i++) {
+    const x = positions.getX(i);
+    const z = positions.getZ(i);
     const y = getTerrainHeight(x, z);
-    pos.setY(i, y);
+    positions.setY(i, y);
 
-    // Color: Green for high, Sandy for low
-    if (y < -1) {
-        // Sand
-        colors.push(0.76, 0.7, 0.5);
-    } else {
-        // Grass (vary slightly based on height)
-        const g = 0.5 + (Math.random() * 0.1);
-        colors.push(0.1, g, 0.1);
+    // Color Logic
+    let color = new THREE.Color();
+    
+    // 1. Calculate approximate slope (cheap way)
+    const neighborY = getTerrainHeight(x + 2, z);
+    const slope = Math.abs(y - neighborY);
+
+    if (y > 28) { // Snowy Peaks
+        color.set(0xffffff);
+    } else if (slope > 1.2) { // Steep Cliffs -> Gray Rock
+        color.set(0x777777);
+    } else if (y > 10) { // High Tundra -> Darker Green/Gray
+        color.set(0x445544);
+    } else if (y < -2) { // Valleys -> Sandy
+        color.set(0xc2b280);
+    } else { // Normal ground
+        color.set(0x228B22);
     }
+
+    colors[i * 3] = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
 }
 
-geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 geometry.computeVertexNormals();
-
-const material = new THREE.MeshStandardMaterial({ 
-    vertexColors: true,
-    roughness: 0.8 
-});
-
-const ground = new THREE.Mesh(geometry, material);
-ground.receiveShadow = true;
-scene.add(ground);
+const terrain = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }));
+terrain.receiveShadow = true;
+scene.add(terrain);
 
 // --- PLAYER STATE ---
 const players = {}; 
 let myId = null;
 let myMesh = null;
 
-// Starting State
 const state = {
-    x: 0, 
-    y: 10, // Spawn high to avoid sticking in a hill
-    z: 0,
-    yVelocity: 0,
+    x: 0, y: 50, z: 0,
+    yVel: 0,
+    yaw: 0,           // Rotation angle
+    jumpCount: 0,     // For Double Jump
     isGrounded: false,
     zoomLevel: 10,
-    yaw: 0 // Camera rotation
+    lastDash: 0,      // Timestamp
+    dashVel: { x: 0, z: 0 }
 };
 
-// --- HELPER FUNCTIONS ---
+// --- HELPERS ---
 function createNametag(text) {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -111,19 +114,14 @@ function createNametag(text) {
     ctx.fillStyle = "white";
     ctx.textAlign = "center";
     ctx.fillText(text, 128, 42);
-    const texture = new THREE.CanvasTexture(canvas);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture }));
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
     sprite.scale.set(4, 1, 1);
     sprite.position.y = 1.3;
     return sprite;
 }
 
 function createPlayerMesh(data) {
-    const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(1, 1, 1),
-        new THREE.MeshStandardMaterial({ color: data.color })
-    );
-    mesh.position.set(data.x, data.y, data.z);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: data.color }));
     mesh.castShadow = true;
     mesh.add(createNametag(data.name));
     return mesh;
@@ -131,147 +129,133 @@ function createPlayerMesh(data) {
 
 // --- INPUTS ---
 const keys = {};
-window.addEventListener('keydown', (e) => keys[e.code] = true);
+window.addEventListener('keydown', (e) => {
+    keys[e.code] = true;
+    // Single-press events (Jump & Dash)
+    if (e.code === 'Space') handleJump();
+    if (e.code === 'KeyQ') handleDash();
+});
 window.addEventListener('keyup', (e) => keys[e.code] = false);
 
-// --- SOCKET EVENTS ---
-socket.on('connect', () => { myId = socket.id; });
+function handleJump() {
+    if (state.isGrounded) {
+        state.yVel = 0.5;
+        state.jumpCount = 1;
+        state.isGrounded = false;
+    } else if (state.jumpCount < 2) {
+        state.yVel = 0.4; // Double jump slightly weaker
+        state.jumpCount = 2;
+    }
+}
 
+function handleDash() {
+    const now = Date.now();
+    if (now - state.lastDash > 500) { // 0.5s cooldown
+        const power = 1.5;
+        state.dashVel.x = Math.sin(state.yaw) * power;
+        state.dashVel.z = Math.cos(state.yaw) * power;
+        state.lastDash = now;
+    }
+}
+
+// --- NETWORK ---
 socket.on('currentPlayers', (serverPlayers) => {
-    Object.keys(serverPlayers).forEach((id) => {
+    Object.keys(serverPlayers).forEach(id => {
         if (!players[id]) {
-            const p = serverPlayers[id];
-            const mesh = createPlayerMesh(p);
-            scene.add(mesh);
-            players[id] = mesh;
-            if (id === myId) {
-                myMesh = mesh;
-                state.x = p.x; state.y = p.y; state.z = p.z;
+            players[id] = createPlayerMesh(serverPlayers[id]);
+            scene.add(players[id]);
+            if (id === socket.id) {
+                myId = id; myMesh = players[id];
             }
         }
     });
 });
-
 socket.on('newPlayer', (data) => {
-    const mesh = createPlayerMesh(data.player);
-    scene.add(mesh);
-    players[data.id] = mesh;
+    players[data.id] = createPlayerMesh(data.player);
+    scene.add(players[data.id]);
 });
-
 socket.on('playerMoved', (data) => {
     if (data.id !== myId && players[data.id]) {
         players[data.id].position.set(data.x, data.y, data.z);
     }
 });
-
 socket.on('playerDisconnected', (id) => {
     if (players[id]) { scene.remove(players[id]); delete players[id]; }
 });
 
 // --- GAME LOOP ---
-const GRAVITY = 0.02;
-const JUMP_FORCE = 0.5;
-const SPEED = 0.2;
-
 function animate() {
     requestAnimationFrame(animate);
 
     if (myMesh) {
-        // --- INPUT LOGIC ---
-        // Zoom I/O
+        // 1. Zoom Logic
         if (keys['KeyI']) state.zoomLevel = Math.max(0, state.zoomLevel - 0.5);
-        if (keys['KeyO']) state.zoomLevel = Math.min(30, state.zoomLevel + 0.5);
+        if (keys['KeyO']) state.zoomLevel = Math.min(50, state.zoomLevel + 0.5);
 
-        // Movement Calculation
-        // Use camera angle for movement direction
-        const camDir = new THREE.Vector3();
-        camera.getWorldDirection(camDir);
-        camDir.y = 0; // Flatten to XZ plane
-        camDir.normalize();
+        // 2. Rotation (A / D) - Turning 15 degrees is quite fast, using 0.05 radians (~3 deg) per frame for smoothness
+        if (keys['KeyA']) state.yaw += 0.05;
+        if (keys['KeyD']) state.yaw -= 0.05;
+        myMesh.rotation.y = state.yaw;
 
-        const camSide = new THREE.Vector3();
-        camSide.crossVectors(camera.up, camDir).normalize(); // Get Right vector (actually Left in ThreeJS usually)
+        // 3. Movement (W / S) - Moves in the direction of Yaw
+        let moveX = 0;
+        let moveZ = 0;
+        const speed = 0.25;
 
-        let dx = 0; 
-        let dz = 0;
-        let moving = false;
-
-        // WASD relative to camera
-        if (keys['KeyW']) { dx += camDir.x; dz += camDir.z; moving = true; }
-        if (keys['KeyS']) { dx -= camDir.x; dz -= camDir.z; moving = true; }
-        if (keys['KeyA']) { dx += camSide.x; dz += camSide.z; moving = true; }
-        if (keys['KeyD']) { dx -= camSide.x; dz -= camSide.z; moving = true; }
-
-        if (moving) {
-            // Normalize speed so diagonal isn't faster
-            const len = Math.sqrt(dx*dx + dz*dz);
-            if (len > 0) {
-                dx = (dx / len) * SPEED;
-                dz = (dz / len) * SPEED;
-            }
-            state.x += dx;
-            state.z += dz;
-            
-            // Rotate player to face movement
-            myMesh.rotation.y = Math.atan2(dx, dz);
+        if (keys['KeyW']) {
+            moveX = Math.sin(state.yaw) * speed;
+            moveZ = Math.cos(state.yaw) * speed;
+        }
+        if (keys['KeyS']) {
+            moveX = -Math.sin(state.yaw) * speed;
+            moveZ = -Math.cos(state.yaw) * speed;
         }
 
-        // --- PHYSICS & COLLISION ---
-        // 1. Get height of ground at current X, Z
-        const groundHeight = getTerrainHeight(state.x, state.z);
-        const playerHeight = 0.5; // Half of cube height
+        // Apply movement + dash friction
+        state.x += moveX + state.dashVel.x;
+        state.z += moveZ + state.dashVel.z;
+        state.dashVel.x *= 0.9; // Dash decays quickly
+        state.dashVel.z *= 0.9;
 
-        // 2. Jump
-        if (keys['Space'] && state.isGrounded) {
-            state.yVelocity = JUMP_FORCE;
-            state.isGrounded = false;
-        }
+        // 4. Physics (Gravity + Ground)
+        state.yVel -= 0.02; // Gravity
+        state.y += state.yVel;
 
-        // 3. Apply Gravity
-        state.yVelocity -= GRAVITY;
-        state.y += state.yVelocity;
-
-        // 4. Floor Collision
-        if (state.y < groundHeight + playerHeight) {
-            state.y = groundHeight + playerHeight;
-            state.yVelocity = 0;
+        const h = getTerrainHeight(state.x, state.z) + 0.5;
+        if (state.y < h) {
+            state.y = h;
+            state.yVel = 0;
             state.isGrounded = true;
+            state.jumpCount = 0;
         }
 
-        // --- UPDATE MESH ---
         myMesh.position.set(state.x, state.y, state.z);
 
-        // --- CAMERA UPDATE ---
-        if (state.zoomLevel < 0.5) {
-            // First Person
+        // 5. Camera Follow Logic
+        if (state.zoomLevel < 1) {
+            // First Person: Camera inside head, looking forward
             myMesh.visible = false;
-            camera.position.set(state.x, state.y + 0.5, state.z);
-            // Simple look logic (just look forward based on last move or fixed)
-            // Ideally FPS needs mouse look, but keeping it simple:
-            const lookTargetX = state.x + dx * 10;
-            const lookTargetZ = state.z + dz * 10;
-            if (moving) camera.lookAt(lookTargetX, state.y, lookTargetZ);
+            camera.position.set(state.x, state.y + 0.4, state.z);
+            camera.rotation.y = state.yaw + Math.PI; // Correct for front view
         } else {
-            // Third Person (Fixed offset angle style)
+            // Third Person: Camera orbits behind player based on Yaw
             myMesh.visible = true;
-            const camOffsetH = state.zoomLevel; 
-            const camOffsetV = state.zoomLevel * 0.5 + 2;
+            const camDist = state.zoomLevel;
+            const camHeight = 3 + (state.zoomLevel * 0.3);
             
-            camera.position.set(state.x, state.y + camOffsetV, state.z + camOffsetH);
-            camera.lookAt(state.x, state.y, state.z);
+            // Calculate camera position relative to player rotation
+            camera.position.set(
+                state.x - Math.sin(state.yaw) * camDist,
+                state.y + camHeight,
+                state.z - Math.cos(state.yaw) * camDist
+            );
+            camera.lookAt(state.x, state.y + 1, state.z);
         }
 
-        // Send to server
         socket.emit('playerMovement', { x: state.x, y: state.y, z: state.z });
     }
 
     renderer.render(scene, camera);
 }
-
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-});
 
 animate();
