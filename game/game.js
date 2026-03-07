@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createNoise2D } from 'https://unpkg.com/simplex-noise@4.0.1/dist/esm/simplex-noise.js';
 
 // --- CONFIGURATION ---
 const SERVER_URL = window.location.origin; 
@@ -6,407 +7,360 @@ const socket = io(SERVER_URL);
 
 // --- SCENE SETUP ---
 const scene = new THREE.Scene();
+// Sky Color: Bright Anime Blue
+scene.background = new THREE.Color(0x87CEEB);
+scene.fog = new THREE.Fog(0x87CEEB, 200, 2000);
 
-// 1. SKY & FOG (Crisp, not blurry)
-const vertexShader = `
-    varying vec3 vWorldPosition;
-    void main() {
-        vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
-        vWorldPosition = worldPosition.xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
-    }
-`;
-const fragmentShader = `
-    uniform vec3 topColor;
-    uniform vec3 bottomColor;
-    varying vec3 vWorldPosition;
-    void main() {
-        float h = normalize( vWorldPosition ).y;
-        gl_FragColor = vec4( mix( bottomColor, topColor, max( h, 0.0 ) ), 1.0 );
-    }
-`;
-const skyMat = new THREE.ShaderMaterial({
-    vertexShader, fragmentShader,
-    uniforms: {
-        topColor: { value: new THREE.Color(0x0077ff) },
-        bottomColor: { value: new THREE.Color(0xffffff) }
-    },
-    side: THREE.BackSide
-});
-const skyGeo = new THREE.SphereGeometry(20000, 32, 15);
-scene.add(new THREE.Mesh(skyGeo, skyMat));
-
-// Fog that blends the distant chunks
-scene.fog = new THREE.Fog(0xffffff, 1000, 8000);
-
-const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 20000);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace; // Correct color management
 document.body.appendChild(renderer.domElement);
 
-// --- LIGHTING ---
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
-scene.add(hemiLight);
+// --- LIGHTING (The "RPG" Look) ---
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // High ambient for "anime" look
+scene.add(ambientLight);
 
-const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-sun.position.set(2000, 3000, 2000);
-sun.castShadow = true;
-sun.shadow.mapSize.set(4096, 4096);
-sun.shadow.camera.near = 0.5;
-sun.shadow.camera.far = 10000;
-const d = 4000;
-sun.shadow.camera.left = -d; sun.shadow.camera.right = d;
-sun.shadow.camera.top = d; sun.shadow.camera.bottom = -d;
-sun.shadow.bias = -0.0001;
-scene.add(sun);
+const sunLight = new THREE.DirectionalLight(0xfff5e6, 1.5); // Warm sun
+sunLight.position.set(500, 1000, 500);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048, 2048);
+sunLight.shadow.camera.near = 0.5;
+sunLight.shadow.camera.far = 2000;
+const d = 1000;
+sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
+sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+sunLight.shadow.bias = -0.0005; // Removes "black blob" artifacts
+scene.add(sunLight);
 
-// --- TERRAIN ENGINE (EROSION & DERIVATIVE NOISE) ---
-const WORLD_SIZE = 10000; // 10km
-const CHUNKS_SIDE = 8;    // 64 Chunks total
-const CHUNK_SIZE = WORLD_SIZE / CHUNKS_SIDE; 
-const SEGMENTS = 128;     // High vertex density
+// Visible Sun Mesh
+const sunGeo = new THREE.SphereGeometry(50, 32, 32);
+const sunMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+sunMesh.position.copy(sunLight.position).normalize().multiplyScalar(1800);
+scene.add(sunMesh);
 
-// Pseudo-random hash
-function hash(x, z) {
-    let k = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
-    return k - Math.floor(k);
-}
+// --- NOISE GENERATION (Standard Library) ---
+const noise2D = createNoise2D();
 
-// Cubic interpolation
-function mix(a, b, t) { return a * (1-t) + b * t; }
-function smooth(t) { return t * t * (3 - 2 * t); }
-
-// Value Noise for base shape
-function vNoise(x, z) {
-    let ix = Math.floor(x); let iz = Math.floor(z);
-    let fx = x - ix; let fz = z - iz;
-    let u = smooth(fx); let v = smooth(fz);
-    let a = hash(ix, iz); let b = hash(ix+1, iz);
-    let c = hash(ix, iz+1); let d = hash(ix+1, iz+1);
-    return mix(mix(a, b, u), mix(c, d, u), v);
-}
-
-// "Erosion" Noise - Uses derivative to simulate flow
+// FBM (Fractal Brownian Motion) for "Mountainous" look
 function getTerrainHeight(x, z) {
-    const dist = Math.sqrt(x*x + z*z);
-    
-    // 1. Exponential Mask (Valley in middle, Mountains at edge)
-    // Using power 2.5 for a wide playable valley
-    const mask = Math.pow(Math.min(1.0, dist / (WORLD_SIZE/2.1)), 2.5);
-
-    // 2. Multi-Fractal Noise with "Erosion" Look
     let y = 0;
-    let amp = 1;
-    let freq = 0.002;
-    
-    for (let i = 0; i < 6; i++) {
-        // Absolute value creates sharp ridges (ridges = 1 - abs(noise))
-        let n = 1.0 - Math.abs(Math.sin(x * freq + vNoise(x*freq, z*freq)) + Math.cos(z * freq));
-        
-        // Sharpen peaks (power function)
-        n = Math.pow(n, 2.0); 
-        
-        y += n * amp;
-        amp *= 0.45; // Lacunarity
-        freq *= 2.0;
-    }
+    let amp = 150; // Base height
+    let freq = 0.002; // Base spread
 
-    // 3. Scale Height
-    // Max height 1800m at edges
-    return mask * (y * 1800); 
+    // Layer 1: General rolling hills
+    y += noise2D(x * freq, z * freq) * amp;
+
+    // Layer 2: Detail
+    y += noise2D(x * freq * 2.5, z * freq * 2.5) * amp * 0.5;
+
+    // Layer 3: Rocky bumps
+    y += noise2D(x * freq * 10, z * freq * 10) * amp * 0.1;
+
+    // Mountain Mask (Exponential) - Forces edges to be mountains
+    const dist = Math.sqrt(x*x + z*z);
+    const worldRadius = 2000;
+    const mask = Math.pow(dist / worldRadius, 4); 
+    
+    // Add massive peaks at edges
+    const mountains = Math.abs(noise2D(x * 0.0005, z * 0.0005)) * 1500;
+    
+    return y + (mountains * mask);
 }
 
-// --- GRASS SYSTEM ---
-// Instanced Mesh for performance
-const grassGeo = new THREE.PlaneGeometry(2, 4); // Larger grass blades
+// --- SHADERS FOR WIND ---
+const windVertexShader = `
+    varying vec2 vUv;
+    varying vec3 vNormal;
+    uniform float time;
+    uniform float swayPower; // 1.0 for grass, 0.1 for trees
+
+    void main() {
+        vUv = uv;
+        vNormal = normal;
+        vec4 pos = vec4(position, 1.0);
+        
+        // Simple wind: move X/Z based on time and height
+        float wind = sin(time + instanceMatrix[3][0] * 0.05 + instanceMatrix[3][2] * 0.05);
+        
+        // Apply only to top vertices (y > 0)
+        float heightFactor = max(0.0, pos.y); 
+        pos.x += wind * swayPower * heightFactor * 0.2;
+        
+        gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * pos;
+    }
+`;
+
+const simpleFragmentShader = `
+    varying vec2 vUv;
+    varying vec3 vNormal;
+    uniform vec3 color;
+    void main() {
+        // Simple lighting calculation for flat look
+        vec3 light = normalize(vec3(0.5, 1.0, 0.5));
+        float diff = dot(vNormal, light);
+        diff = max(0.0, diff);
+        
+        vec3 finalColor = color * (0.6 + 0.4 * diff); // Ambient + Diffuse
+        gl_FragColor = vec4(finalColor, 1.0);
+    }
+`;
+
+// --- ASSETS: GRASS & TREES ---
+
+// 1. Grass Asset
+const grassGeo = new THREE.PlaneGeometry(1.5, 1.5);
+grassGeo.translate(0, 0.75, 0); // Pivot at bottom
 const grassMat = new THREE.ShaderMaterial({
-    uniforms: { time: { value: 0 } },
-    side: THREE.DoubleSide,
-    vertexShader: `
-        varying vec2 vUv;
-        uniform float time;
-        void main() {
-            vUv = uv;
-            vec4 pos = vec4(position, 1.0);
-            // Wind Calculation based on world position
-            float wind = sin(time * 2.0 + instanceMatrix[3][0] * 0.1 + instanceMatrix[3][2] * 0.1);
-            if (pos.y > 0.0) { // Only move top of blade
-                pos.x += wind * 0.5;
-            }
-            gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * pos;
-        }
-    `,
-    fragmentShader: `
-        varying vec2 vUv;
-        void main() {
-            vec3 color = mix(vec3(0.1, 0.5, 0.1), vec3(0.4, 0.8, 0.2), vUv.y);
-            if (color.g < 0.2) discard; // Simple alpha test
-            gl_FragColor = vec4(color, 1.0);
-        }
-    `
+    vertexShader: windVertexShader,
+    fragmentShader: simpleFragmentShader,
+    uniforms: {
+        time: { value: 0 },
+        swayPower: { value: 1.0 }, // Full sway
+        color: { value: new THREE.Color(0x55aa55) }
+    },
+    side: THREE.DoubleSide
 });
 
-// --- CHUNK MANAGER ---
-function createChunk(xOffset, zOffset) {
+// 2. Tree Asset (Low Poly Pine)
+const treeGeo = new THREE.CylinderGeometry(0, 1.5, 5, 5); // Cone foliage
+treeGeo.translate(0, 2.5, 0);
+const trunkGeo = new THREE.CylinderGeometry(0.5, 0.5, 2, 5); // Trunk
+trunkGeo.translate(0, 1, 0);
+// Merge logic (simplified: separate meshes for colors)
+const treeFoliageMat = new THREE.ShaderMaterial({
+    vertexShader: windVertexShader,
+    fragmentShader: simpleFragmentShader,
+    uniforms: {
+        time: { value: 0 },
+        swayPower: { value: 0.1 }, // Gentle sway
+        color: { value: new THREE.Color(0x228b22) }
+    },
+    flatShading: true
+});
+const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, flatShading: true });
+
+
+// --- CHUNK GENERATION ---
+const CHUNK_SIZE = 100;
+const GRID_SIZE = 10; // 10x10 chunks
+const SEGMENTS = 20;
+
+function createChunk(xOff, zOff) {
     const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, SEGMENTS, SEGMENTS);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
-    const colors = new Float32Array(pos.count * 3);
     
-    // Grass Placement Arrays
+    // Arrays for Instancing
     const grassMatrices = [];
-    const grassDummy = new THREE.Object3D();
+    const treeMatrices = [];
+    const dummy = new THREE.Object3D();
 
-    for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i) + xOffset;
-        const z = pos.getZ(i) + zOffset;
+    // 1. Deform Terrain
+    for(let i=0; i<pos.count; i++){
+        const x = pos.getX(i) + xOff;
+        const z = pos.getZ(i) + zOff;
         const y = getTerrainHeight(x, z);
         pos.setY(i, y);
 
-        // Slope Calculation
-        // Sample neighbors for normal calculation proxy
-        const hR = getTerrainHeight(x+10, z);
-        const hL = getTerrainHeight(x-10, z);
-        const hD = getTerrainHeight(x, z+10);
-        const hU = getTerrainHeight(x, z-10);
-        
-        // Approximate slope vector magnitude
-        const slope = Math.sqrt(Math.pow(hR-hL, 2) + Math.pow(hD-hU, 2)) / 20.0;
-
-        const color = new THREE.Color();
-
-        // Biome Logic
-        if (y > 1200) { 
-            color.setHex(0xffffff); // Snow
-        } else if (slope > 1.2) { 
-            color.setHex(0x505050); // Dark Cliff Rock
-        } else if (y < 200) { 
-            color.setHex(0x228B22); // Forest Green
-            
-            // Grass Spawning (Only in low green areas)
-            // Use random chance + density map
-            if (Math.random() > 0.985) {
-                grassDummy.position.set(x + (Math.random()-0.5)*5, y, z + (Math.random()-0.5)*5);
-                grassDummy.scale.setScalar(0.8 + Math.random()*0.5);
-                grassDummy.rotation.y = Math.random() * Math.PI;
-                grassDummy.updateMatrix();
-                grassMatrices.push(grassDummy.matrix.clone());
-            }
-        } else {
-            color.setHex(0x5c5038); // Brown/Tundra
+        // 2. Place Vegetation (Height check)
+        // Trees: Rare, lower heights
+        if (y < 80 && Math.random() > 0.99) {
+            dummy.position.set(x, y, z);
+            dummy.scale.setScalar(1.5 + Math.random());
+            dummy.rotation.y = Math.random() * Math.PI;
+            dummy.updateMatrix();
+            treeMatrices.push(dummy.matrix.clone());
         }
-        
-        // Add some noise to color to remove "banding"
-        color.offsetHSL(0, 0, (Math.random() - 0.5) * 0.05);
-
-        colors[i * 3] = color.r;
-        colors[i * 3 + 1] = color.g;
-        colors[i * 3 + 2] = color.b;
+        // Grass: Common, lower heights
+        else if (y < 50 && Math.random() > 0.8) {
+            dummy.position.set(x, y, z);
+            dummy.scale.setScalar(1);
+            dummy.rotation.y = Math.random() * Math.PI;
+            dummy.updateMatrix();
+            grassMatrices.push(dummy.matrix.clone());
+        }
     }
-
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    
     geo.computeVertexNormals();
 
     const group = new THREE.Group();
-    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
-    mesh.position.set(xOffset, 0, zOffset);
-    mesh.receiveShadow = true;
-    mesh.castShadow = true;
-    group.add(mesh);
+    // Ground Mesh
+    const groundMat = new THREE.MeshStandardMaterial({ 
+        color: 0x44aa44, // Bright Green
+        roughness: 0.8,
+        flatShading: true
+    });
+    const ground = new THREE.Mesh(geo, groundMat);
+    ground.position.set(xOff, 0, zOff);
+    ground.receiveShadow = true;
+    ground.castShadow = true;
+    group.add(ground);
 
-    // Add Grass Batch
+    // Instanced Grass
     if (grassMatrices.length > 0) {
-        const grassMesh = new THREE.InstancedMesh(grassGeo, grassMat, grassMatrices.length);
-        for(let k=0; k<grassMatrices.length; k++) {
-            grassMesh.setMatrixAt(k, grassMatrices[k]);
+        const iGrass = new THREE.InstancedMesh(grassGeo, grassMat, grassMatrices.length);
+        for(let k=0; k<grassMatrices.length; k++) iGrass.setMatrixAt(k, grassMatrices[k]);
+        iGrass.position.set(xOff, 0, zOff);
+        iGrass.frustumCulled = false; // Prevent popping
+        group.add(iGrass);
+    }
+
+    // Instanced Trees (Foliage Only for simplicity in ShaderMaterial)
+    if (treeMatrices.length > 0) {
+        const iTree = new THREE.InstancedMesh(treeGeo, treeFoliageMat, treeMatrices.length);
+        const iTrunk = new THREE.InstancedMesh(trunkGeo, treeTrunkMat, treeMatrices.length);
+        
+        for(let k=0; k<treeMatrices.length; k++) {
+            iTree.setMatrixAt(k, treeMatrices[k]);
+            iTrunk.setMatrixAt(k, treeMatrices[k]);
         }
-        grassMesh.position.set(xOffset, 0, zOffset);
-        // Important: Frustum culling can be tricky with InstancedMesh if bounding sphere isn't set, 
-        // but for this simple setup it usually defaults to the origin. We'll disable culling for grass to prevent popping.
-        grassMesh.frustumCulled = false; 
-        scene.add(grassMesh);
+        iTree.position.set(xOff, 0, zOff);
+        iTrunk.position.set(xOff, 0, zOff);
+        iTree.frustumCulled = false;
+        iTrunk.frustumCulled = false;
+        
+        group.add(iTree);
+        group.add(iTrunk);
     }
 
     return group;
 }
 
-// Generate the 8x8 Grid
-for (let x = 0; x < CHUNKS_SIDE; x++) {
-    for (let z = 0; z < CHUNKS_SIDE; z++) {
-        const xPos = (x * CHUNK_SIZE) - (WORLD_SIZE/2) + (CHUNK_SIZE/2);
-        const zPos = (z * CHUNK_SIZE) - (WORLD_SIZE/2) + (CHUNK_SIZE/2);
-        scene.add(createChunk(xPos, zPos));
+// Generate World
+const worldOffset = (GRID_SIZE * CHUNK_SIZE) / 2;
+for(let x=0; x<GRID_SIZE; x++){
+    for(let z=0; z<GRID_SIZE; z++){
+        const xp = (x * CHUNK_SIZE) - worldOffset;
+        const zp = (z * CHUNK_SIZE) - worldOffset;
+        scene.add(createChunk(xp, zp));
     }
 }
 
-// --- PLAYER & CAMERA ---
+// --- PLAYER ---
 const players = {};
 let myMesh = null;
-
 const state = {
     x: 0, y: 50, z: 0,
-    yVel: 0,
-    yaw: 0, pitch: 0,
-    zoomLevel: 30,
-    jumpCount: 0, isGrounded: false,
-    dashVel: { x: 0, z: 0 },
-    lastDash: 0
+    yVel: 0, yaw: 0, pitch: 0,
+    zoom: 20, isGrounded: false, jumpCount: 0,
+    dashVel: { x:0, z:0 }, lastDash: 0
 };
 
-// Pointer Lock
-document.body.addEventListener('click', () => {
-    document.body.requestPointerLock();
-});
-
-document.addEventListener('mousemove', (e) => {
-    if (document.pointerLockElement === document.body) {
-        state.yaw -= e.movementX * 0.002;
-        state.pitch -= e.movementY * 0.002;
-        // Clamp pitch to avoid flipping over
-        state.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, state.pitch));
-    }
-});
-
+// --- INPUTS ---
 const keys = {};
-document.addEventListener('keydown', (e) => {
+document.addEventListener('keydown', e => {
     keys[e.code] = true;
     if (e.code === 'Space') {
-        if (state.isGrounded) { state.yVel = 1.6; state.jumpCount = 1; state.isGrounded = false; }
-        else if (state.jumpCount < 2) { state.yVel = 1.4; state.jumpCount = 2; }
+        if(state.isGrounded) { state.yVel = 1.0; state.isGrounded = false; state.jumpCount = 1; }
+        else if(state.jumpCount < 2) { state.yVel = 0.8; state.jumpCount = 2; }
     }
-    if (e.code === 'KeyQ') { // DASH
-        const now = Date.now();
-        if (now - state.lastDash > 500) {
-            // Dash towards where camera is facing (horizontal only)
-            state.dashVel.x = -Math.sin(state.yaw) * 12.0;
-            state.dashVel.z = -Math.cos(state.yaw) * 12.0;
-            state.lastDash = now;
-        }
+    if (e.code === 'KeyQ' && Date.now() - state.lastDash > 500) {
+        state.dashVel.x = -Math.sin(state.yaw) * 8;
+        state.dashVel.z = -Math.cos(state.yaw) * 8;
+        state.lastDash = Date.now();
     }
 });
-document.addEventListener('keyup', (e) => keys[e.code] = false);
+document.addEventListener('keyup', e => keys[e.code] = false);
 
-// --- HELPER: PLAYER MESH ---
-function createPlayerMesh(data) {
-    const group = new THREE.Group();
-    const cube = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshStandardMaterial({ color: data.color }));
-    cube.castShadow = true;
-    group.add(cube);
+// Pointer Lock
+document.addEventListener('click', () => document.body.requestPointerLock());
+document.addEventListener('mousemove', e => {
+    if(document.pointerLockElement){
+        state.yaw -= e.movementX * 0.002;
+        state.pitch -= e.movementY * 0.002;
+        state.pitch = Math.max(-1.5, Math.min(1.5, state.pitch));
+    }
+});
 
+// Helper
+function createPlayer(data) {
+    const g = new THREE.Group();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.5,1.5,1.5), new THREE.MeshStandardMaterial({color:data.color}));
+    mesh.castShadow = true;
+    g.add(mesh);
+    
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    canvas.width = 256; canvas.height = 64;
-    ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.roundRect(0,0,256,64,12); ctx.fill();
-    ctx.font = "bold 32px Arial"; ctx.fillStyle = "white"; ctx.textAlign="center";
-    ctx.fillText(data.name, 128, 42);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
-    sprite.scale.set(6, 1.5, 1);
-    sprite.position.y = 3;
-    group.add(sprite);
-    return group;
+    canvas.width = 256; canvas.height=64;
+    ctx.fillStyle="rgba(0,0,0,0.5)"; ctx.fillRect(0,0,256,64);
+    ctx.font="30px Arial"; ctx.fillStyle="white"; ctx.textAlign="center";
+    ctx.fillText(data.name, 128,42);
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas)}));
+    s.scale.set(4,1,1); s.position.y=2;
+    g.add(s);
+    return g;
 }
 
-// --- SOCKETS ---
-socket.on('currentPlayers', (srvPlayers) => {
-    Object.keys(srvPlayers).forEach(id => {
-        if(!players[id]) {
-            players[id] = createPlayerMesh(srvPlayers[id]);
-            scene.add(players[id]);
-            if(id === socket.id) myMesh = players[id];
-        }
+// Net
+socket.on('currentPlayers', p => {
+    Object.keys(p).forEach(id=>{
+        if(!players[id]) { players[id]=createPlayer(p[id]); scene.add(players[id]); if(id===socket.id) myMesh=players[id]; }
     });
 });
-socket.on('newPlayer', (d) => { players[d.id] = createPlayerMesh(d.player); scene.add(players[d.id]); });
-socket.on('playerMoved', (d) => { if(d.id !== socket.id && players[d.id]) players[d.id].position.set(d.x, d.y, d.z); });
-socket.on('playerDisconnected', (id) => { if(players[id]) { scene.remove(players[id]); delete players[id]; }});
+socket.on('newPlayer', d => { players[d.id]=createPlayer(d.player); scene.add(players[d.id]); });
+socket.on('playerMoved', d => { if(players[d.id] && d.id!==socket.id) players[d.id].position.set(d.x,d.y,d.z); });
+socket.on('playerDisconnected', id => { if(players[id]) { scene.remove(players[id]); delete players[id]; } });
 
-// --- MAIN LOOP ---
+// Loop
 const clock = new THREE.Clock();
 
 function animate() {
     requestAnimationFrame(animate);
-    const time = clock.getElapsedTime();
+    const t = clock.getElapsedTime();
     
-    // Animate Grass
-    grassMat.uniforms.time.value = time;
+    // Update Shader Time
+    grassMat.uniforms.time.value = t;
+    treeFoliageMat.uniforms.time.value = t;
 
     if (myMesh) {
-        // 1. ZOOM I/O
-        if (keys['KeyI']) state.zoomLevel = Math.max(0, state.zoomLevel - 1);
-        if (keys['KeyO']) state.zoomLevel = Math.min(200, state.zoomLevel + 1);
+        if(keys['KeyI']) state.zoom -= 1;
+        if(keys['KeyO']) state.zoom += 1;
+        state.zoom = Math.max(0, Math.min(50, state.zoom));
 
-        // 2. MOVEMENT (WASD relative to Yaw)
-        const sprint = keys['ShiftLeft'] ? 2.5 : 1.0;
-        let mx = 0, mz = 0;
-        
-        // Standard FPS WASD Calculation
-        // W moves forward (-z), S moves back (+z)
-        if (keys['KeyW']) { mx -= Math.sin(state.yaw); mz -= Math.cos(state.yaw); }
-        if (keys['KeyS']) { mx += Math.sin(state.yaw); mz += Math.cos(state.yaw); }
-        if (keys['KeyA']) { mx -= Math.sin(state.yaw + Math.PI/2); mz -= Math.cos(state.yaw + Math.PI/2); }
-        if (keys['KeyD']) { mx += Math.sin(state.yaw + Math.PI/2); mz += Math.cos(state.yaw + Math.PI/2); }
+        // Move
+        let mx=0, mz=0;
+        if(keys['KeyW']) { mx -= Math.sin(state.yaw); mz -= Math.cos(state.yaw); }
+        if(keys['KeyS']) { mx += Math.sin(state.yaw); mz += Math.cos(state.yaw); }
+        if(keys['KeyA']) { mx -= Math.sin(state.yaw + 1.57); mz -= Math.cos(state.yaw + 1.57); }
+        if(keys['KeyD']) { mx += Math.sin(state.yaw + 1.57); mz += Math.cos(state.yaw + 1.57); }
 
-        if (mx !== 0 || mz !== 0) {
-            const len = Math.sqrt(mx*mx + mz*mz);
-            state.x += (mx/len) * sprint;
-            state.z += (mz/len) * sprint;
-            // Face direction of movement
-            myMesh.rotation.y = Math.atan2(-mx, -mz); // Flip for mesh facing
-        } else {
-            // If idle, match camera yaw
-            myMesh.rotation.y = state.yaw; // Match camera
+        if(mx||mz) {
+            const l = Math.sqrt(mx*mx+mz*mz);
+            state.x += (mx/l)*0.6; state.z += (mz/l)*0.6;
+            myMesh.rotation.y = Math.atan2(-mx, -mz);
         }
-
-        // Apply Dash
-        state.x += state.dashVel.x;
-        state.z += state.dashVel.z;
+        
+        state.x += state.dashVel.x; state.z += state.dashVel.z;
         state.dashVel.x *= 0.9; state.dashVel.z *= 0.9;
 
-        // 3. GRAVITY & COLLISION
-        state.yVel -= 0.05;
+        // Phys
+        state.yVel -= 0.03;
         state.y += state.yVel;
-
-        const groundH = getTerrainHeight(state.x, state.z);
-        if (state.y < groundH + 1.0) {
-            state.y = groundH + 1.0;
-            state.yVel = 0;
-            state.isGrounded = true;
-            state.jumpCount = 0;
-        }
+        const h = getTerrainHeight(state.x, state.z) + 0.75;
+        if(state.y < h) { state.y = h; state.yVel=0; state.isGrounded=true; state.jumpCount=0; }
 
         myMesh.position.set(state.x, state.y, state.z);
 
-        // 4. CAMERA LOGIC
-        if (state.zoomLevel < 1) {
-            // First Person
+        // Cam
+        if(state.zoom < 1) {
             myMesh.visible = false;
-            camera.position.set(state.x, state.y + 1, state.z);
-            // In FPS, camera rotation is pure yaw/pitch
+            camera.position.set(state.x, state.y+0.8, state.z);
             camera.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
         } else {
-            // Third Person (Orbit)
             myMesh.visible = true;
-            
-            // Calculate target camera position
-            const cx = state.x + Math.sin(state.yaw) * state.zoomLevel * Math.cos(state.pitch);
-            const cz = state.z + Math.cos(state.yaw) * state.zoomLevel * Math.cos(state.pitch);
-            const cy = state.y + state.zoomLevel * Math.sin(-state.pitch) + 5; // +5 looks over shoulder
-
-            // Camera Collision Check (Don't clip through mountains)
-            // We sample the terrain at the camera's potential position
-            const camGroundH = getTerrainHeight(cx, cz);
-            const finalCamY = Math.max(cy, camGroundH + 2); // Stay 2 units above ground minimum
-
-            camera.position.set(cx, finalCamY, cz);
-            camera.lookAt(state.x, state.y + 2, state.z);
+            const cy = state.y + 2 + state.zoom * Math.sin(-state.pitch + 0.5);
+            const cx = state.x + Math.sin(state.yaw) * state.zoom * Math.cos(state.pitch);
+            const cz = state.z + Math.cos(state.yaw) * state.zoom * Math.cos(state.pitch);
+            camera.position.set(cx, cy, cz);
+            camera.lookAt(state.x, state.y+1, state.z);
         }
         
-        socket.emit('playerMovement', { x: state.x, y: state.y, z: state.z });
+        socket.emit('playerMovement', {x:state.x, y:state.y, z:state.z});
     }
-
     renderer.render(scene, camera);
 }
 animate();
