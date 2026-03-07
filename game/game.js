@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNoise2D } from 'https://unpkg.com/simplex-noise@4.0.1/dist/esm/simplex-noise.js';
 
 /**
@@ -142,7 +142,7 @@ function createGrassGeometry() {
     }
 
     // Merge all blades into one geometry
-    const mergedGeo = THREE.BufferGeometryUtils.mergeGeometries(geometries);
+    const mergedGeo = mergeGeometries(geometries);
     mergedGeo.computeVertexNormals();
     return mergedGeo;
 }
@@ -172,7 +172,7 @@ function createPineGeometry() {
         tiers.push(cone);
     }
 
-    const mergedTree = THREE.BufferGeometryUtils.mergeGeometries(tiers);
+    const mergedTree = mergeGeometries(tiers);
     mergedTree.computeVertexNormals();
     return mergedTree;
 }
