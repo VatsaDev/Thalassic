@@ -78,5 +78,23 @@
     "type": "skin",
     "imagePrompt": "Pixel art game character skin, green druid wizard robe, nature magic, 400x400",
     "staticImage": "/assets/armor2.png"
+  },
+  {
+    "id": "wizord_frier",
+    "name": "WIZORD FRIER",
+    "description": "A legendary fire mage skin with unmatched power.",
+    "cost": 10000000,
+    "rarity": "legendary",
+    "type": "skin",
+    "imagePrompt": "Pixel art game character skin, fire wizard robe, legendary golden trim, intense flames, 400x400"
+  },
+  {
+    "id": "wizord_gandalf",
+    "name": "WIZORD GANDALF",
+    "description": "The legendary grey wizard of myth and legend.",
+    "cost": 10000000,
+    "rarity": "legendary",
+    "type": "skin",
+    "imagePrompt": "Pixel art game character skin, grey wizard robe, legendary staff, ancient wisdom, 400x400"
   }
 ]

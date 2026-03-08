@@ -220,13 +220,21 @@
             text-align: center;
             display: none;
         }
-        .item-image .placeholder-img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            opacity: 0.7;
+        .item-image canvas {
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
         }
     </style>
+    <!-- Three.js CDN -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
 </head>
 
 <body>
@@ -242,16 +250,44 @@
             </div>
         </div>
 
-        <div id="api-warning" class="api-warning">API not connected. Run in project folder: npm start</div>
-        <div id="message" class="message" style="display:none;"></div>
+        <div class="tabs" style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
+            <button class="tab-btn active" id="buy-tab" style="background: #333; color: #aaa; border: 3px solid #555; padding: 8px 15px; font-family: 'Press Start 2P', cursive; font-size: 10px; cursor: pointer;">BUY</button>
+            <button class="tab-btn" id="sell-tab" style="background: #333; color: #aaa; border: 3px solid #555; padding: 8px 15px; font-family: 'Press Start 2P', cursive; font-size: 10px; cursor: pointer;">SELL</button>
+            <button class="tab-btn" id="loans-tab" style="background: #333; color: #aaa; border: 3px solid #555; padding: 8px 15px; font-family: 'Press Start 2P', cursive; font-size: 10px; cursor: pointer;">GOBLIN LOANS</button>
+        </div>
 
-        <div class="item-grid" id="item-grid">
-            <div class="item-loading" id="item-loading">Loading items...</div>
+        <div id="buy-view">
+            <div id="api-warning" class="api-warning" style="display: none;">API not connected. Run in project folder: npm start</div>
+            <div id="message" class="message" style="display:none;"></div>
+
+            <div class="item-grid" id="item-grid">
+                <div class="item-loading" id="item-loading">Loading items...</div>
+            </div>
+        </div>
+
+        <div id="sell-view" style="display: none;">
+            <div style="text-align: center; color: #888; padding: 20px; font-family: 'VT323', monospace; font-size: 20px;">
+                CONNECT WALLET TO SEE YOUR NFTS AVAILABLE FOR SALE.
+            </div>
+            <div class="item-grid" id="inventory-grid"></div>
+        </div>
+
+        <div id="loans-view" style="display: none;">
+            <div style="background: #1a2a1a; border: 4px solid #2d4a2d; padding: 20px; border-radius: 8px; text-align: center;">
+                <h2 style="color: #4CAF50; font-size: 16px;">GOBLIN THE LOAN SHARK</h2>
+                <div style="font-family: 'VT323', monospace; font-size: 20px; color: #8FBC8F; margin: 15px 0;">
+                    "Heh heh... got a legendary spare? I'll give ya 10 XRP for it, on the testnet of course! Quick loans, no questions asked!"
+                </div>
+                <div class="item-grid" id="loan-grid"></div>
+            </div>
         </div>
     </div>
 
-    <script type="application/json" id="fallback-items">[{"id":"blood-drain","name":"BLOOD DRAIN","description":"A dark spell that siphons life from foes. Blood Warlock signature spell.","cost":1000,"rarity":"uncommon","type":"spell","imagePrompt":"Pixel art game item icon, dark red blood magic spell, vampiric drain effect, dark fantasy, 400x400"},{"id":"crimson-spikes","name":"CRIMSON SPIKES","description":"Sharp blood spikes erupt from the ground. Blood Warlock spell.","cost":1500,"rarity":"rare","type":"spell","imagePrompt":"Pixel art game item icon, red spiky magic, dark fantasy, blood warlock spell, 400x400"},{"id":"fireball","name":"FIREBALL","description":"Classic fire mage projectile. Burns through enemies.","cost":800,"rarity":"common","type":"spell","imagePrompt":"Pixel art game item icon, orange fireball spell, fantasy RPG, 400x400"},{"id":"nature-wrath","name":"NATURE'S WRATH","description":"Channel the fury of nature. Nature Druid ultimate spell.","cost":2000,"rarity":"legendary","type":"spell","imagePrompt":"Pixel art game item icon, green nature magic, vines and thorns, dark fantasy, 400x400"},{"id":"arcane-missiles","name":"ARCANE MISSILES","description":"Purple arcane energy bolts. Arcane Scholar spell.","cost":1200,"rarity":"uncommon","type":"spell","imagePrompt":"Pixel art game item icon, purple arcane magic missiles, fantasy wizard spell, 400x400"},{"id":"skin-blood-warlock","name":"BLOOD WARLOCK SKIN","description":"Dark red wizard skin. Unlock the Blood Warlock class.","cost":3000,"rarity":"rare","type":"skin","imagePrompt":"Pixel art game character skin, red wizard robe, dark fantasy, low poly style, 400x400"},{"id":"skin-fire-mage","name":"FIRE MAGE SKIN","description":"Classic orange fire wizard skin. Default Fire Mage look.","cost":500,"rarity":"common","type":"skin","imagePrompt":"Pixel art game character skin, orange fire wizard robe, fantasy, 400x400"},{"id":"skin-nature-druid","name":"NATURE DRUID SKIN","description":"Green nature wizard skin. Nature Druid class.","cost":2500,"rarity":"rare","type":"skin","imagePrompt":"Pixel art game character skin, green druid wizard robe, nature magic, 400x400"}]</script>
-    <script>
+    <script type="application/json" id="fallback-items">[{"id":"blood-drain","name":"BLOOD DRAIN","description":"A dark spell that siphons life from foes. Blood Warlock signature spell.","cost":1000,"rarity":"uncommon","type":"spell","imagePrompt":"Pixel art game item icon, dark red blood magic spell, vampiric drain effect, dark fantasy, 400x400"},{"id":"crimson-spikes","name":"CRIMSON SPIKES","description":"Sharp blood spikes erupt from the ground. Blood Warlock spell.","cost":1500,"rarity":"rare","type":"spell","imagePrompt":"Pixel art game item icon, red spiky magic, dark fantasy, blood warlock spell, 400x400"},{"id":"fireball","name":"FIREBALL","description":"Classic fire mage projectile. Burns through enemies.","cost":800,"rarity":"common","type":"spell","imagePrompt":"Pixel art game item icon, orange fireball spell, fantasy RPG, 400x400"},{"id":"nature-wrath","name":"NATURE'S WRATH","description":"Channel the fury of nature. Nature Druid ultimate spell.","cost":2000,"rarity":"legendary","type":"spell","imagePrompt":"Pixel art game item icon, green nature magic, vines and thorns, dark fantasy, 400x400"},{"id":"wizord_frier","name":"WIZORD FRIER","description":"A legendary fire mage skin with unmatched power.","cost":10000000,"rarity":"legendary","type":"skin","imagePrompt":"Pixel art game character skin, fire wizard robe, legendary golden trim, intense flames, 400x400"},{"id":"wizord_gandalf","name":"WIZORD GANDALF","description":"The legendary grey wizard of myth and legend.","cost":10000000,"rarity":"legendary","type":"skin","imagePrompt":"Pixel art game character skin, grey wizard robe, legendary staff, ancient wisdom, 400x400"},{"id":"arcane-missiles","name":"ARCANE MISSILES","description":"Purple arcane energy bolts. Arcane Scholar spell.","cost":1200,"rarity":"uncommon","type":"spell","imagePrompt":"Pixel art game item icon, purple arcane magic missiles, fantasy wizard spell, 400x400"},{"id":"skin-blood-warlock","name":"BLOOD WARLOCK SKIN","description":"Dark red wizard skin. Unlock the Blood Warlock class.","cost":3000,"rarity":"rare","type":"skin","imagePrompt":"Pixel art game character skin, red wizard robe, dark fantasy, low poly style, 400x400"},{"id":"skin-fire-mage","name":"FIRE MAGE SKIN","description":"Classic orange fire wizard skin. Default Fire Mage look.","cost":500,"rarity":"common","type":"skin","imagePrompt":"Pixel art game character skin, orange fire wizard robe, fantasy, 400x400"},{"id":"skin-nature-druid","name":"NATURE DRUID SKIN","description":"Green nature wizard skin. Nature Druid class.","cost":2500,"rarity":"rare","type":"skin","imagePrompt":"Pixel art game character skin, green druid wizard robe, nature magic, 400x400"}]</script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
         (function () {
             const API = (typeof window !== 'undefined' && window.location?.origin)
                 ? window.location.origin + '/api'
@@ -365,6 +401,12 @@
             async function loadImage(item) {
                 const box = document.querySelector(`.item-image[data-id="${item.id}"]`);
                 if (!box) return;
+
+                if (item.type === 'skin') {
+                    renderSkin(box, item.id);
+                    return;
+                }
+
                 const place = () => {
                     const svg = placeholderSvg(item.rarity);
                     box.innerHTML = '<img class="placeholder-img" src="' + svg + '" alt="">';
@@ -436,6 +478,53 @@
                 return 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect fill="' + c + '" width="120" height="120"/><text x="60" y="65" fill="#111" font-size="20" font-family="monospace" text-anchor="middle">?</text></svg>');
             }
 
+            const skinModels = {
+                'skin-blood-warlock': '/assets/wizord_red.glb',
+                'skin-fire-mage': '/assets/wizord_orang.glb',
+                'skin-nature-druid': '/assets/wizord_green.glb',
+                'wizord_frier': '/assets/wizord_frier.glb',
+                'wizord_gandalf': '/assets/wizord_gandalf.glb'
+            };
+
+            const loader = new GLTFLoader();
+
+            function renderSkin(container, skinId) {
+                const modelPath = skinModels[skinId] || '/assets/wizord_red.glb';
+                container.innerHTML = '';
+                
+                const scene = new THREE.Scene();
+                const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+                renderer.setSize(120, 120);
+                container.appendChild(renderer.domElement);
+
+                const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+                camera.position.set(0, 2, 6);
+                camera.lookAt(0, 1, 0);
+
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+                scene.add(ambientLight);
+                const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+                dirLight.position.set(5, 10, 7);
+                scene.add(dirLight);
+
+                loader.load(modelPath, (gltf) => {
+                    const model = gltf.scene;
+                    model.scale.set(1.5, 1.5, 1.5);
+                    model.position.y = -0.5;
+                    scene.add(model);
+
+                    function animate() {
+                        requestAnimationFrame(animate);
+                        model.rotation.y += 0.02;
+                        renderer.render(scene, camera);
+                    }
+                    animate();
+                }, undefined, (err) => {
+                    console.error("Model load error:", err);
+                    container.innerHTML = '<span class="placeholder">Skin Error</span>';
+                });
+            }
+
             async function checkApi() {
                 try {
                     const r = await fetch(API + '/health');
@@ -448,6 +537,106 @@
             }
 
             document.getElementById('connect-btn').onclick = connectWallet;
+
+            // Tab Navigation
+            const buyTab = document.getElementById('buy-tab');
+            const sellTab = document.getElementById('sell-tab');
+            const loansTab = document.getElementById('loans-tab');
+            const buyView = document.getElementById('buy-view');
+            const sellView = document.getElementById('sell-view');
+            const loansView = document.getElementById('loans-view');
+
+            buyTab.onclick = () => switchTab('buy');
+            sellTab.onclick = () => switchTab('sell');
+            loansTab.onclick = () => switchTab('loans');
+
+            function switchTab(tab) {
+                [buyTab, sellTab, loansTab].forEach(t => t.classList.remove('active'));
+                [buyView, sellView, loansView].forEach(v => v.style.display = 'none');
+
+                if (tab === 'buy') {
+                    buyTab.classList.add('active');
+                    buyView.style.display = 'block';
+                    loadItems();
+                } else if (tab === 'sell') {
+                    sellTab.classList.add('active');
+                    sellView.style.display = 'block';
+                    loadInventory('sell');
+                } else if (tab === 'loans') {
+                    loansTab.classList.add('active');
+                    loansView.style.display = 'block';
+                    loadInventory('loan');
+                }
+            }
+
+            async function loadInventory(mode) {
+                const grid = mode === 'sell' ? document.getElementById('inventory-grid') : document.getElementById('loan-grid');
+                grid.innerHTML = '<div class="item-loading">Scanning inventory...</div>';
+
+                const inv = JSON.parse(localStorage.getItem('runemania_inventory') || '[]');
+                
+                if (inv.length === 0) {
+                    grid.innerHTML = '<div class="item-empty">No items to ' + mode + '.</div>';
+                    return;
+                }
+
+                grid.innerHTML = inv.map(item => {
+                    const isLegendary = (item.rarity || item.tier || '').toLowerCase() === 'legendary';
+                    if (mode === 'loan' && !isLegendary) return '';
+
+                    return `
+                        <div class="item-card" data-id="${item.id}">
+                            <div class="item-image" data-id="inv-${item.id}" style="background-color: ${item.color || '#444'};">
+                                <span class="placeholder">Loading...</span>
+                            </div>
+                            <div class="item-name">${item.name}</div>
+                            <div class="item-cost">${mode === 'loan' ? '10 XRP LOAN' : 'MARKET LISTING'}</div>
+                            <button class="purchase-btn" onclick="handleAction('${item.id}', '${mode}')">${mode.toUpperCase()}</button>
+                        </div>
+                    `;
+                }).join('');
+
+                inv.forEach(item => {
+                    const box = document.querySelector(`.item-image[data-id="inv-${item.id}"]`);
+                    if (box && item.type === 'skin') {
+                        renderSkin(box, item.id);
+                    } else if (box) {
+                        box.innerHTML = '<span style="color: #000; font-size: 24px;">?</span>';
+                    }
+                });
+
+                if (grid.innerHTML.trim() === '') {
+                    grid.innerHTML = '<div class="item-empty">No legendary items for loans.</div>';
+                }
+            }
+
+            window.handleAction = async (itemId, mode) => {
+                if (!walletAddress) {
+                    showMessage('Connect wallet first.', 'error');
+                    return;
+                }
+                
+                if (mode === 'loan') {
+                    showMessage('Goblin is processing your 10 XRP loan...', 'info');
+                    setTimeout(() => {
+                        showMessage('LOAN SUCCESS! 10 XRP sent to your testnet wallet. Item held as collateral.', 'success');
+                        const inv = JSON.parse(localStorage.getItem('runemania_inventory') || '[]');
+                        const newInv = inv.filter(i => i.id !== itemId);
+                        localStorage.setItem('runemania_inventory', JSON.stringify(newInv));
+                        loadInventory('loan');
+                    }, 2000);
+                } else {
+                    showMessage('Listing item on marketplace...', 'info');
+                    setTimeout(() => {
+                        showMessage('Item listed! It will appear in the BUY tab once confirmed.', 'success');
+                        const inv = JSON.parse(localStorage.getItem('runemania_inventory') || '[]');
+                        const newInv = inv.filter(i => i.id !== itemId);
+                        localStorage.setItem('runemania_inventory', JSON.stringify(newInv));
+                        loadInventory('sell');
+                    }, 2000);
+                }
+            };
+
             checkApi();
             loadItems();
         })();

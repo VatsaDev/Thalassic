@@ -26,13 +26,19 @@ function getImageBufferForItem(item, itemId) {
 
 router.post('/purchase', async (req, res) => {
   try {
-    const { itemId, walletAddress } = req.body;
-    if (!itemId || !walletAddress) {
-      return res.status(400).json({ error: 'itemId and walletAddress required' });
+    const { itemId, walletAddress, isLootbox, itemData } = req.body;
+    if ((!itemId && !itemData) || !walletAddress) {
+      return res.status(400).json({ error: 'itemId/itemData and walletAddress required' });
     }
 
-    const items = loadItems();
-    const item = items.find((i) => i.id === itemId);
+    let item;
+    if (isLootbox && itemData) {
+      item = itemData;
+    } else {
+      const items = loadItems();
+      item = items.find((i) => i.id === itemId);
+    }
+
     if (!item) {
       return res.status(404).json({ error: 'Item not found' });
     }

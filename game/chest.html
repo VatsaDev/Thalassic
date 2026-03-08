@@ -78,6 +78,7 @@
         <div class="item-tier" id="card-tier">EPIC</div>
         <div class="item-name" id="card-name">MANA CRYSTAL</div>
         <div class="item-stat" id="card-stat">+50 MAX MANA</div>
+        <button id="mint-btn" style="margin-top: 15px; width: 100%; display: none; background: #ffd700; color: #000; border: 4px solid #aa0000;">MINT AS NFT</button>
     </div>
 
     <button id="continue-btn">CONTINUE TO LOBBY</button>
@@ -238,6 +239,16 @@
                 const inv = JSON.parse(localStorage.getItem('runemania_inventory') || '[]');
                 inv.push(finalItem);
                 localStorage.setItem('runemania_inventory', JSON.stringify(inv));
+
+                const mintBtn = document.getElementById('mint-btn');
+                mintBtn.style.display = 'block';
+                mintBtn.onclick = () => mintItem(finalItem);
+
+                // Auto-mint if wallet is connected
+                if (localStorage.getItem('runemania_wallet')) {
+                    console.log("Wallet found, auto-minting...");
+                    mintItem(finalItem);
+                }
             }, 800);
 
             // Particles
@@ -269,6 +280,46 @@
         document.getElementById('continue-btn').addEventListener('click', () => {
             window.location.href = 'index.html';
         });
+
+        async function mintItem(item) {
+            const btn = document.getElementById('mint-btn');
+            const walletAddr = localStorage.getItem('runemania_wallet');
+            
+            if (!walletAddr) {
+                alert("PLEASE SIGN IN ON THE LOBBY PAGE FIRST!");
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = "MINTING...";
+
+            try {
+                // We use the purchase endpoint which handles minting
+                const res = await fetch('/api/lootbox/purchase', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        itemId: item.id,
+                        walletAddress: walletAddr,
+                        isLootbox: true,
+                        itemData: item // Pass full item data for dynamic minting
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    alert("NFT MINTED! ACCEPT THE OFFER IN YOUR WALLET.");
+                    btn.textContent = "MINTED!";
+                } else {
+                    throw new Error(data.error || "MINT FAILED");
+                }
+            } catch (err) {
+                console.error("Minting error:", err);
+                alert("MINTING FAILED: " + err.message);
+                btn.disabled = false;
+                btn.textContent = "MINT AS NFT";
+            }
+        }
     </script>
 </body>
 </html>
