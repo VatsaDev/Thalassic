@@ -265,6 +265,63 @@
             margin-right: 10px;
             border-radius: 2px;
         }
+
+        /* Tab System */
+        .tabs {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            background: #333;
+            color: #aaa;
+            border: 3px solid #555;
+            padding: 8px 15px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 10px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .tab-btn.active {
+            background: #ffd700;
+            color: #000;
+            border-color: #aa0000;
+        }
+
+        .inventory-panel {
+            display: none;
+            max-height: 350px;
+            overflow-y: auto;
+            background: #111;
+            border: 4px solid #444;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            scrollbar-width: thin;
+        }
+        .inventory-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+        .inv-item {
+            background: #222;
+            border: 2px solid #444;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'VT323', monospace;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .inv-item:hover { border-color: #666; }
+        .inv-item.equipped { border-color: #ffd700; background: #2a2510; }
+        .inv-item-info { text-align: left; }
+        .inv-item-name { font-size: 20px; color: #fff; margin-bottom: 2px; }
+        .inv-item-stat { font-size: 18px; color: #4CAF50; }
+        .inv-slot-badge { font-family: 'Press Start 2P', cursive; font-size: 8px; color: #ffd700; }
     </style>
 </head>
 
@@ -284,20 +341,34 @@
                 <input type="text" id="username" placeholder="PLAYER 1" required autocomplete="off" maxlength="12">
             </div>
 
-            <div class="viewer-container">
-                <div id="loading">LOADING...</div>
-                <div id="canvas-container"></div>
-                <div class="arrow-btn" id="prev-btn">&lt;</div>
-                <div class="arrow-btn" id="next-btn">&gt;</div>
-                <div class="skin-name" id="skin-name-display">FIRE MAGE</div>
+            <div class="tabs">
+                <div class="tab-btn active" id="tab-skins">SKINS</div>
+                <div class="tab-btn" id="tab-inv">INVENTORY</div>
             </div>
 
-            <!-- Spell Loadout UI -->
-            <div class="spell-loadout" id="spell-loadout">
-                <h3>SPELL LOADOUT</h3>
-                <div id="spell-list">
-                    <!-- Spells populated by JS -->
+            <div id="skins-view">
+                <div class="viewer-container">
+                    <div id="loading">LOADING...</div>
+                    <div id="canvas-container"></div>
+                    <div class="arrow-btn" id="prev-btn">&lt;</div>
+                    <div class="arrow-btn" id="next-btn">&gt;</div>
+                    <div class="skin-name" id="skin-name-display">FIRE MAGE</div>
                 </div>
+
+                <!-- Spell Loadout UI -->
+                <div class="spell-loadout" id="spell-loadout">
+                    <h3>SPELL LOADOUT</h3>
+                    <div id="spell-list">
+                        <!-- Spells populated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <div id="inventory-view" class="inventory-panel">
+                <div id="inventory-list" class="inventory-grid">
+                    <!-- Items populated by JS -->
+                </div>
+                <div style="font-family: 'VT323', monospace; font-size: 16px; color: #777; margin-top: 10px;">EQUIP UP TO 3 ITEMS (BUFFS APPLY IN BATTLE)</div>
             </div>
 
             <!-- Hidden input to store selected skin index -->
@@ -469,6 +540,77 @@
 
             window.location.href = `game.html?username=${encodeURIComponent(username)}&skin=${skinId}`;
         });
+
+        // Tab Switching
+        const skinsTab = document.getElementById('tab-skins');
+        const invTab = document.getElementById('tab-inv');
+        const skinsView = document.getElementById('skins-view');
+        const invView = document.getElementById('inventory-view');
+
+        skinsTab.addEventListener('click', () => {
+            skinsTab.classList.add('active');
+            invTab.classList.remove('active');
+            skinsView.style.display = 'block';
+            invView.style.display = 'none';
+        });
+
+        invTab.addEventListener('click', () => {
+            invTab.classList.add('active');
+            skinsTab.classList.remove('active');
+            invView.style.display = 'block';
+            skinsView.style.display = 'none';
+            renderInventory();
+        });
+
+        // Inventory Logic
+        function renderInventory() {
+            const list = document.getElementById('inventory-list');
+            list.innerHTML = '';
+            
+            const inv = JSON.parse(localStorage.getItem('runemania_inventory') || '[]');
+            const equippedIds = JSON.parse(localStorage.getItem('runemania_equipped') || '[]');
+
+            if (inv.length === 0) {
+                list.innerHTML = '<div style="color: #555; padding: 20px;">NO ITEMS FOUND. WIN BATTLES TO EARN CHESTS!</div>';
+                return;
+            }
+
+            inv.forEach(item => {
+                const el = document.createElement('div');
+                const isEquipped = equippedIds.includes(item.id);
+                el.className = `inv-item ${isEquipped ? 'equipped' : ''}`;
+                el.style.borderLeftColor = item.color;
+                el.style.borderLeftWidth = '6px';
+
+                el.innerHTML = `
+                    <div class="inv-item-info">
+                        <div class="inv-item-name" style="color: ${item.color}">${item.name}</div>
+                        <div class="inv-item-stat">+${item.value} ${item.type.toUpperCase()}</div>
+                    </div>
+                    ${isEquipped ? '<div class="inv-slot-badge">EQUIPPED</div>' : ''}
+                `;
+
+                el.addEventListener('click', () => toggleEquip(item.id));
+                list.appendChild(el);
+            });
+        }
+
+        function toggleEquip(id) {
+            let equippedIds = JSON.parse(localStorage.getItem('runemania_equipped') || '[]');
+            
+            if (equippedIds.includes(id)) {
+                equippedIds = equippedIds.filter(eid => eid !== id);
+            } else {
+                if (equippedIds.length < 3) {
+                    equippedIds.push(id);
+                } else {
+                    alert("MAX 3 ITEMS EQUIPPED!");
+                }
+            }
+            
+            localStorage.setItem('runemania_equipped', JSON.stringify(equippedIds));
+            renderInventory();
+        }
     </script>
 </body>
 

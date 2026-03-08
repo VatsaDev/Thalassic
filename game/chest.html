@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Victory Chest - Runemania</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
+        body {
+            margin: 0;
+            background: #000;
+            color: white;
+            font-family: 'Press Start 2P', cursive;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 60vh;
+            cursor: pointer;
+        }
+        .ui {
+            z-index: 10;
+            text-align: center;
+            padding: 20px;
+        }
+        h1 { color: #ffd700; margin-bottom: 5px; }
+        .kd-info { font-family: 'VT323', monospace; font-size: 24px; color: #aaa; margin-bottom: 20px; }
+        #item-card {
+            display: none;
+            background: rgba(40, 40, 40, 0.9);
+            border: 4px solid #fff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: -100px;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes popIn { from { transform: scale(0); } to { transform: scale(1); } }
+        .item-tier { font-size: 12px; margin-bottom: 10px; opacity: 0.8; }
+        .item-name { font-size: 20px; color: #fff; text-shadow: 2px 2px 0 #000; margin-bottom: 10px; }
+        .item-stat { font-family: 'VT323', monospace; font-size: 24px; color: #4CAF50; }
+        button {
+            margin-top: 30px;
+            padding: 15px 30px;
+            background: #4CAF50;
+            color: white;
+            border: 4px solid #2E7D32;
+            font-family: 'Press Start 2P', cursive;
+            cursor: pointer;
+            box-shadow: 4px 4px 0px #000;
+            display: none;
+        }
+        #instruction {
+            font-size: 12px;
+            color: #777;
+            margin-top: 10px;
+            animation: blink 1s infinite;
+        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    </style>
+</head>
+<body>
+    <div class="ui">
+        <h1>BATTLE REWARDS</h1>
+        <div class="kd-info" id="kd-display">KD: 0.00 | Kills: 0 | Deaths: 0</div>
+    </div>
+
+    <div id="canvas-container"></div>
+    
+    <div id="instruction">CLICK CHEST TO OPEN</div>
+
+    <div id="item-card">
+        <div class="item-tier" id="card-tier">EPIC</div>
+        <div class="item-name" id="card-name">MANA CRYSTAL</div>
+        <div class="item-stat" id="card-stat">+50 MAX MANA</div>
+    </div>
+
+    <button id="continue-btn">CONTINUE TO LOBBY</button>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+        }
+    }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const kd = parseFloat(urlParams.get('kd') || '0');
+        const kills = parseInt(urlParams.get('kills') || '0');
+        const deaths = parseInt(urlParams.get('deaths') || '0');
+        document.getElementById('kd-display').innerText = `KD: ${kd.toFixed(2)} | KILLS: ${kills} | DEATHS: ${deaths}`;
+
+        // Loot Tables
+        const tiers = [
+            { name: "COMMON", color: 0x888888, minKD: 0 },
+            { name: "UNCOMMON", color: 0x4CAF50, minKD: 0.5 },
+            { name: "RARE", color: 0x2196F3, minKD: 1.5 },
+            { name: "EPIC", color: 0x9C27B0, minKD: 3.0 },
+            { name: "MYTHIC", color: 0xFF9800, minKD: 5.0 },
+            { name: "LEGENDARY", color: 0xFFD700, minKD: 8.0 }
+        ];
+
+        let selectedTier = tiers[0];
+        for (let t of tiers) {
+            if (kd >= t.minKD) selectedTier = t;
+        }
+
+        // ROLL FOR HIGHER TIER
+        const roll = Math.random();
+        const tierIdx = tiers.indexOf(selectedTier);
+        if (roll < 0.15 && tierIdx < tiers.length - 1) {
+            selectedTier = tiers[tierIdx + 1];
+        }
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / (window.innerHeight * 0.6), 0.1, 1000);
+        camera.position.set(0, 5, 15);
+        camera.lookAt(0, 1, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight * 0.6);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambient);
+        const sun = new THREE.PointLight(0xffffff, 2.0);
+        sun.position.set(5, 10, 5);
+        scene.add(sun);
+
+        // Voxel Chest
+        const chestGroup = new THREE.Group();
+        scene.add(chestGroup);
+
+        const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+        const baseMat = new THREE.MeshPhongMaterial({ color: 0x4d2911, flatShading: true }); // Wood
+        const trimMat = new THREE.MeshPhongMaterial({ color: selectedTier.color, flatShading: true }); // Tier Metal
+
+        // Base
+        for(let x=-2; x<=2; x++) {
+            for(let z=-2; z<=2; z++) {
+                for(let y=0; y<=2; y++) {
+                    const isTrim = Math.abs(x) === 2 || Math.abs(z) === 2 || y === 0;
+                    const block = new THREE.Mesh(boxGeo, isTrim ? trimMat : baseMat);
+                    block.position.set(x, y, z);
+                    chestGroup.add(block);
+                }
+            }
+        }
+
+        // Lid
+        const lidGroup = new THREE.Group();
+        lidGroup.position.set(0, 3, -2.5); // Pivot at back
+        chestGroup.add(lidGroup);
+
+        for(let x=-2; x<=2; x++) {
+            for(let z=0; z<=4; z++) {
+                for(let y=0; y<=1; y++) {
+                    const isTrim = Math.abs(x) === 2 || z === 0 || z === 4 || y === 1;
+                    const block = new THREE.Mesh(boxGeo, isTrim ? trimMat : baseMat);
+                    block.position.set(x, y, z + 0.5);
+                    lidGroup.add(block);
+                }
+            }
+        }
+
+        let opened = false;
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta();
+            
+            if (!opened) {
+                chestGroup.rotation.y += dt * 0.5;
+                chestGroup.position.y = Math.sin(clock.getElapsedTime() * 2) * 0.2;
+            } else {
+                if (lidGroup.rotation.x > -Math.PI/1.5) {
+                    lidGroup.rotation.x -= dt * 5;
+                }
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / (window.innerHeight * 0.6);
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight * 0.6);
+        });
+
+        document.getElementById('canvas-container').addEventListener('click', openChest);
+
+        function openChest() {
+            if (opened) return;
+            opened = true;
+            document.getElementById('instruction').style.display = 'none';
+
+            // Generate Item
+            const types = [
+                { id: 'attack', name: 'RUNE SHARD', stat: 'ATTACK', min: 1, max: 5, prefix: 'DMG' },
+                { id: 'mana', name: 'SOUL CRYSTAL', stat: 'MAX MANA', min: 10, max: 100, prefix: '' },
+                { id: 'hp', name: 'VITAL ESSENCE', stat: 'MAX HP', min: 10, max: 100, prefix: '' }
+            ];
+            const type = types[Math.floor(Math.random() * types.length)];
+            
+            // Value scales with tier (roughly)
+            const tierMult = (tiers.indexOf(selectedTier) + 1) / tiers.length;
+            const val = Math.floor(type.min + (type.max - type.min) * Math.random() * tierMult) || type.min;
+
+            const finalItem = {
+                id: Math.random().toString(36).substr(2, 9),
+                name: `${selectedTier.name} ${type.name}`,
+                tier: selectedTier.name.toLowerCase(),
+                type: type.id,
+                value: val,
+                color: '#' + selectedTier.color.toString(16).padStart(6, '0')
+            };
+
+            // Display Card
+            setTimeout(() => {
+                document.getElementById('item-card').style.display = 'block';
+                document.getElementById('item-card').style.borderColor = finalItem.color;
+                document.getElementById('card-tier').innerText = selectedTier.name;
+                document.getElementById('card-tier').style.color = finalItem.color;
+                document.getElementById('card-name').innerText = finalItem.name;
+                document.getElementById('card-stat').innerText = `+${val} ${type.stat}`;
+                document.getElementById('continue-btn').style.display = 'inline-block';
+                
+                // Save to localStorage
+                const inv = JSON.parse(localStorage.getItem('runemania_inventory') || '[]');
+                inv.push(finalItem);
+                localStorage.setItem('runemania_inventory', JSON.stringify(inv));
+            }, 800);
+
+            // Particles
+            spawnGlow(finalItem.color);
+        }
+
+        function spawnGlow(color) {
+            for (let i = 0; i < 40; i++) {
+                const pGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+                const pMat = new THREE.MeshBasicMaterial({ color: color });
+                const p = new THREE.Mesh(pGeo, pMat);
+                p.position.set(0, 2, 0);
+                scene.add(p);
+
+                const v = new THREE.Vector3((Math.random()-0.5)*10, Math.random()*15, (Math.random()-0.5)*10);
+                const life = 2.0;
+                
+                function upP() {
+                    p.position.add(v.clone().multiplyScalar(0.016));
+                    v.y -= 0.1;
+                    p.scale.multiplyScalar(0.98);
+                    if (p.scale.x > 0.05) requestAnimationFrame(upP);
+                    else scene.remove(p);
+                }
+                upP();
+            }
+        }
+
+        document.getElementById('continue-btn').addEventListener('click', () => {
+            window.location.href = 'index.html';
+        });
+    </script>
+</body>
+</html>

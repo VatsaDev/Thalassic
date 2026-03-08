@@ -31,6 +31,7 @@ io.on('connection', (socket) => {
 
     const username = socket.handshake.query.username || ("Guest_" + Math.floor(Math.random() * 1000));
     const skinId = parseInt(socket.handshake.query.skin || "0", 10);
+    const initialHP = parseInt(socket.handshake.query.initialHP || "100", 10);
 
     // Create new player data
     players[socket.id] = {
@@ -38,7 +39,8 @@ io.on('connection', (socket) => {
         color: '#' + Math.floor(Math.random() * 16777215).toString(16),
         name: username,
         skinId: skinId,
-        hp: 100,
+        hp: initialHP,
+        maxHP: initialHP,
         kills: 0,
         deaths: 0
     };
@@ -123,11 +125,11 @@ io.on('connection', (socket) => {
                 // Respawn after 3 seconds
                 setTimeout(() => {
                     if (players[targetId]) {
-                        players[targetId].hp = 100;
+                        players[targetId].hp = players[targetId].maxHP;
                         players[targetId].x = 50;
                         players[targetId].y = 100;
                         players[targetId].z = -50;
-                        io.emit('playerRespawn', { id: targetId, x: 50, y: 100, z: -50, hp: 100 });
+                        io.emit('playerRespawn', { id: targetId, x: 50, y: 100, z: -50, hp: players[targetId].maxHP });
                     }
                 }, 3000);
             }

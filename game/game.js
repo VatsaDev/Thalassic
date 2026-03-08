@@ -25,9 +25,28 @@ const username = urlParams.get('username') || "Guest";
 const skinString = urlParams.get('skin') || "0";
 const skinId = parseInt(skinString, 10);
 
+// Load inventory and buffs
+const inventory = JSON.parse(localStorage.getItem('runemania_inventory') || '[]');
+const equippedIds = JSON.parse(localStorage.getItem('runemania_equipped') || '[]');
+const equippedItems = inventory.filter(item => equippedIds.includes(item.id));
+
+let bonusHP = 0;
+let bonusMana = 0;
+let attackBonus = 0;
+
+equippedItems.forEach(item => {
+    if (item.type === 'hp') bonusHP += item.value;
+    if (item.type === 'mana') bonusMana += item.value;
+    if (item.type === 'attack') attackBonus += item.value;
+});
+
+const initialHP = 100 + bonusHP;
+const initialMaxMana = 100 + bonusMana;
+
+
 const socket = io(SERVER_URL, {
     autoConnect: false,
-    query: { username: username, skin: skinId }
+    query: { username: username, skin: skinId, initialHP: initialHP }
 });
 
 const scene = new THREE.Scene();
@@ -482,7 +501,9 @@ const state = {
     activeSpellIndex: 0,
     lastCastTime: 0,
     speedMultiplier: 1.0,
-    isDead: false
+    isDead: false,
+    maxHP: initialHP,
+    maxMana: initialMaxMana
 };
 
 function createPlayerMesh(data) {
@@ -827,7 +848,9 @@ function initSocket() {
     });
 
     socket.on('matchEnded', () => {
-        window.location.href = 'index.html';
+        // Redirect to chest opening with KD data
+        const kdRatio = (myKD.deaths === 0) ? myKD.kills : (myKD.kills / myKD.deaths).toFixed(2);
+        window.location.href = `chest.html?kd=${kdRatio}&kills=${myKD.kills}&deaths=${myKD.deaths}`;
     });
 }
 
@@ -910,7 +933,7 @@ function animate() {
                 if (hit) {
                     spell.hasHit = true;
                     const def = SpellRegistry[spell.spellName];
-                    const dmg = def ? def.damage : 10;
+                    const dmg = (def ? def.damage : 10) + attackBonus;
                     socket.emit('playerHit', { targetId: targetId, damage: dmg });
 
                     // SPECIAL EFFECT: Entangle Root (sent as message or effect for now)
@@ -933,9 +956,9 @@ function animate() {
 
     if (myMesh && !state.isDead) {
         // Assume HP is stored in our players dict if we wanted to update the HP bar
-        const localPlayerHitpoints = players[socket.id] ? players[socket.id].hp : 100;
-        document.getElementById('hp-bar').style.width = localPlayerHitpoints + '%';
-        document.getElementById('hp-text').innerText = localPlayerHitpoints + " / 100";
+        const localPlayerHitpoints = players[socket.id] ? players[socket.id].hp : state.maxHP;
+        document.getElementById('hp-bar').style.width = (localPlayerHitpoints / state.maxHP * 100) + '%';
+        document.getElementById('hp-text').innerText = Math.floor(localPlayerHitpoints) + " / " + state.maxHP;
 
         // Mana Regeneration
         let manaRegenRate = 0; // Natural regen is 0 per user request
@@ -960,10 +983,10 @@ function animate() {
             else if(nearBush) manaRegenRate = 5.0; // Overrides base/shroom if near bush
         }
 
-        state.mana = Math.min(100, state.mana + manaRegenRate * dt);
+        state.mana = Math.min(state.maxMana, state.mana + manaRegenRate * dt);
 
-        document.getElementById('mana-bar').style.width = state.mana + '%';
-        document.getElementById('mana-text').innerText = Math.floor(state.mana) + " / 100";
+        document.getElementById('mana-bar').style.width = (state.mana / state.maxMana * 100) + '%';
+        document.getElementById('mana-text').innerText = Math.floor(state.mana) + " / " + state.maxMana;
 
         // Zoom Logic
         if (keys['KeyI']) state.zoom = Math.max(0, state.zoom - 2);
