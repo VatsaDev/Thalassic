@@ -6,6 +6,8 @@ Sui: nothing but the CTF I think [DOUBLE CHECK THIS]
 Ripple: 1500/1000/500 usd in prizes
 Pinata: 500/member in prizes 
 
+https://www.ebay.com/itm/186877153739?chn=ps&mkevt=1&mkcid=28&google_free_listing_action=view_item
+
 ## thoughts on prizes 
 
  - was honestly hoping for more from SUI, looks like they're just new to platforms and just trying to onboard people, wish they took some risk with a prize though 
