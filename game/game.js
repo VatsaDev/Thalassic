@@ -469,10 +469,6 @@ let matchEndTime = null;
 const bloodSplatters = []; // persistent blood on ground
 const myKD = { kills: 0, deaths: 0 };
 
-// Debug Hitbox Helpers
-const playerHitboxHelpers = {};
-const spellHitboxHelpers = new Map();
-
 const state = {
     x: 50, y: 100, z: -50, // Spawn high
     yVel: 0,
@@ -737,21 +733,11 @@ function initSocket() {
     socket.on('newPlayer', (d) => {
         players[d.id] = createPlayerMesh({ ...d.player, id: d.id });
         scene.add(players[d.id]);
-        
-        // Add debug hitbox wireframe
-        const geo = new THREE.BoxGeometry(8, 14, 8);
-        const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true, transparent: true, opacity: 0.5 });
-        const helper = new THREE.Mesh(geo, mat);
-        scene.add(helper);
-        playerHitboxHelpers[d.id] = helper;
     });
 
     socket.on('playerMoved', (d) => {
         if (players[d.id] && d.id !== socket.id) {
             players[d.id].position.set(d.x, d.y, d.z);
-            if (playerHitboxHelpers[d.id]) {
-                playerHitboxHelpers[d.id].position.set(d.x, d.y + 7, d.z);
-            }
         }
     });
 
@@ -759,10 +745,6 @@ function initSocket() {
         if (players[id]) {
             scene.remove(players[id]);
             delete players[id];
-        }
-        if (playerHitboxHelpers[id]) {
-            scene.remove(playerHitboxHelpers[id]);
-            delete playerHitboxHelpers[id];
         }
     });
 
@@ -865,56 +847,6 @@ function animate() {
 
     // Process Active Spells
     updateSpells(dt, scene, players);
-
-    // Update Player Hitbox Helpers (including our own)
-    Object.keys(players).forEach(id => {
-        if (playerHitboxHelpers[id]) {
-            playerHitboxHelpers[id].position.copy(players[id].position).add(new THREE.Vector3(0, 7, 0));
-        } else {
-            // Create helper if it doesn't exist (e.g. for existing players on join or local player)
-            const geo = new THREE.BoxGeometry(8, 14, 8);
-            const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true, transparent: true, opacity: 0.5 });
-            const helper = new THREE.Mesh(geo, mat);
-            scene.add(helper);
-            playerHitboxHelpers[id] = helper;
-        }
-    });
-
-    // Update Spell Hitbox Helpers
-    activeSpells.forEach(spell => {
-        if (!spell.mesh) return;
-
-        let helper = spellHitboxHelpers.get(spell);
-        if (!helper) {
-            if (spell.type === "box") {
-                const size = spell.size || new THREE.Vector3(10, 10, 10);
-                const geo = new THREE.BoxGeometry(size.x, size.y, size.z);
-                const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true, transparent: true, opacity: 0.5 });
-                helper = new THREE.Mesh(geo, mat);
-            } else {
-                const radius = spell.radius || 5.5;
-                const geo = new THREE.SphereGeometry(radius, 8, 8);
-                const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true, transparent: true, opacity: 0.5 });
-                helper = new THREE.Mesh(geo, mat);
-            }
-            scene.add(helper);
-            spellHitboxHelpers.set(spell, helper);
-        }
-
-        // Sync helper position
-        helper.position.copy(spell.mesh.position);
-        if (spell.type === "box") {
-            helper.rotation.copy(spell.mesh.rotation);
-        }
-    });
-
-    // Remove helpers for dead spells
-    for (const [spell, helper] of spellHitboxHelpers.entries()) {
-        if (!activeSpells.includes(spell)) {
-            scene.remove(helper);
-            spellHitboxHelpers.delete(spell);
-        }
-    }
     
     // ----------------------------------------------------------------------------
     // PHYSICS: Tornado Pull/Fling & Other Effects
@@ -922,22 +854,25 @@ function animate() {
     const myPos = new THREE.Vector3(state.x, state.y, state.z);
     activeSpells.forEach(spell => {
         if (spell.physics === "tornado") {
+            // Skip pull if we are the caster
+            if (spell.ownerId === socket.id) return;
+
             const dist = myPos.distanceTo(spell.mesh.position);
-            if (dist < 40) { // Large pull radius
+            if (dist < 60) { // Larger pull radius (was 40)
                 const pullDir = spell.mesh.position.clone().sub(myPos).normalize();
-                const pullStrength = Math.max(0, (40 - dist) / 40);
+                const pullStrength = Math.max(0, (60 - dist) / 60);
                 
-                // Pull toward center
-                state.x += pullDir.x * pullStrength * 40 * dt;
-                state.z += pullDir.z * pullStrength * 40 * dt;
+                // Pull toward center (2x strength: 80 was 40)
+                state.x += pullDir.x * pullStrength * 80 * dt;
+                state.z += pullDir.z * pullStrength * 80 * dt;
                 
-                // If extremely close, FLING UP
-                if (dist < 10) {
-                    state.yVel += 150 * dt; 
+                // If extremely close, FLING UP (2x strength: 300 was 150)
+                if (dist < 15) {
+                    state.yVel += 300 * dt; 
                     // Add outward tangential push
                     const tangent = new THREE.Vector3(-pullDir.z, 0, pullDir.x);
-                    state.x += tangent.x * 30 * dt;
-                    state.z += tangent.z * 30 * dt;
+                    state.x += tangent.x * 60 * dt;
+                    state.z += tangent.z * 60 * dt;
                 }
             }
         }

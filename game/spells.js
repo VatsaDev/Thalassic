@@ -50,69 +50,78 @@ export function updateSpells(dt, scene, players = {}) {
 // BLOOD WARLOCK SPELLS (0)
 // ==========================================
 function castBloodDrain(scene, pos, dir, ownerId) {
-    // Correct origin: From caster in look direction
-    const geo = new THREE.CylinderGeometry(0.5, 1.5, 40, 8);
-    geo.translate(0, 20, 0); 
-    geo.rotateX(Math.PI/2); 
-    
-    const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8 });
-    const mesh = new THREE.Mesh(geo, mat);
-    
-    mesh.position.copy(pos);
-    mesh.lookAt(pos.clone().add(dir));
-    scene.add(mesh);
+    // Blood Eruption: Frost-nova style burst of blood shards in cast direction
+    for (let i = 0; i < 40; i++) {
+        const angle = (i / 40) * Math.PI * 2;
+        const outDir = new THREE.Vector3(
+            dir.x + Math.cos(angle) * 0.6,
+            0.2,
+            dir.z + Math.sin(angle) * 0.6
+        ).normalize();
 
-    activeSpells.push({
-        mesh: mesh,
-        ownerId: ownerId,
-        spellName: "BLOOD DRAIN",
-        life: 0.5,
-        type: "radius",
-        radius: 3.5,
-        update: function(dt) {
-            this.life -= dt;
-            this.mesh.scale.set(1, 1, 1 + (0.5 - this.life) * 2); 
-            this.mesh.material.opacity = this.life * 2;
-            return this.life <= 0;
-        }
-    });
+        const geo = new THREE.ConeGeometry(1.5, 8, 4);
+        geo.translate(0, 4, 0);
+        const mat = new THREE.MeshBasicMaterial({ color: 0xcc0000, transparent: true, opacity: 0.9 });
+        const mesh = new THREE.Mesh(geo, mat);
+
+        mesh.position.copy(pos).add(outDir.clone().multiplyScalar(4));
+        mesh.lookAt(mesh.position.clone().add(outDir));
+        mesh.rotateX(Math.PI / 4);
+        scene.add(mesh);
+
+        activeSpells.push({
+            mesh: mesh,
+            ownerId: ownerId,
+            spellName: "BLOOD DRAIN",
+            life: 1.5,
+            type: "radius",
+            radius: 8,
+            vel: outDir.multiplyScalar(80 + Math.random() * 30),
+            update: function(dt) {
+                this.life -= dt;
+                this.mesh.position.add(this.vel.clone().multiplyScalar(dt));
+                this.mesh.scale.setScalar(this.life);
+                if (this.life < 0.4) this.mesh.material.opacity = this.life * 2.5;
+                return this.life <= 0;
+            }
+        });
+    }
 }
 
 function castCrimsonSpikes(scene, pos, dir, ownerId) {
-    // 3x longer, 2x wider
-    for (let i = 0; i < 12; i++) {
+    const groundY = pos.y - 2;
+    for (let i = 0; i < 15; i++) {
         setTimeout(() => {
-            const geo = new THREE.ConeGeometry(5, 25, 4); // Giant spikes
-            geo.translate(0, 12, 0);
+            const geo = new THREE.ConeGeometry(8, 40, 4);
+            geo.translate(0, 20, 0);
             
             const mat = new THREE.MeshBasicMaterial({ color: 0x880000 });
             const mesh = new THREE.Mesh(geo, mat);
             
-            // 3x length: multiply distance scalar
-            mesh.position.copy(pos).add(dir.clone().multiplyScalar(10 + i * 12));
-            mesh.position.y -= 20; 
+            mesh.position.copy(pos).add(dir.clone().multiplyScalar(10 + i * 15));
+            mesh.position.setY(groundY - 40);
             scene.add(mesh);
 
             activeSpells.push({
                 mesh: mesh,
                 ownerId: ownerId,
                 spellName: "CRIMSON SPIKES",
-                life: 2.5,
-                type: "radius",
-                radius: 8, // Wider hit box
+                life: 3.0,
+                type: "box",
+                size: new THREE.Vector3(20, 50, 20),
                 growth: 0,
                 update: function(dt) {
                     this.life -= dt;
                     if (this.growth < 1.0) {
-                        this.growth += dt * 8;
-                        this.mesh.position.y += dt * 100;
+                        this.growth += dt * 6;
+                        this.mesh.position.y += dt * 150;
                     } else if (this.life < 0.8) {
-                        this.mesh.position.y -= dt * 40;
+                        this.mesh.position.y -= dt * 60;
                     }
                     return this.life <= 0;
                 }
             });
-        }, i * 80);
+        }, i * 60);
     }
 }
 
@@ -156,33 +165,41 @@ function castVampiricSwarm(scene, pos, dir, ownerId) {
 // NATURE DRUID SPELLS (1)
 // ==========================================
 function castThornWhip(scene, pos, dir, ownerId) {
-    const geo = new THREE.CylinderGeometry(0.6, 1.2, 35, 8);
-    geo.translate(0, 17.5, 0);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x115511 });
-    const mesh = new THREE.Mesh(geo, mat);
-    
-    mesh.position.copy(pos);
-    scene.add(mesh);
+    // Thornbreak: Frost-nova style burst of thorn shards in cast direction
+    for (let i = 0; i < 35; i++) {
+        const angle = (i / 35) * Math.PI * 2;
+        const outDir = new THREE.Vector3(
+            dir.x + Math.cos(angle) * 0.5,
+            0.1,
+            dir.z + Math.sin(angle) * 0.5
+        ).normalize();
 
-    activeSpells.push({
-        mesh: mesh,
-        ownerId: ownerId,
-        spellName: "THORN WHIP",
-        life: 0.4,
-        type: "radius",
-        radius: 6,
-        startAngle: Math.atan2(dir.x, dir.z) - Math.PI/2.5,
-        endAngle: Math.atan2(dir.x, dir.z) + Math.PI/2.5,
-        update: function(dt) {
-            this.life -= dt;
-            const progress = 1.0 - (this.life / 0.4);
-            const currentAngle = this.startAngle + (this.endAngle - this.startAngle) * progress;
-            const whipDir = new THREE.Vector3(Math.sin(currentAngle), 0, Math.cos(currentAngle));
-            this.mesh.lookAt(pos.clone().add(whipDir));
-            this.mesh.rotateX(Math.PI/2);
-            return this.life <= 0;
-        }
-    });
+        const geo = new THREE.ConeGeometry(1.0, 6, 4);
+        geo.translate(0, 3, 0);
+        const mat = new THREE.MeshBasicMaterial({ color: 0x225511 });
+        const mesh = new THREE.Mesh(geo, mat);
+
+        mesh.position.copy(pos).add(outDir.clone().multiplyScalar(5));
+        mesh.lookAt(mesh.position.clone().add(outDir));
+        mesh.rotateX(Math.PI / 4);
+        scene.add(mesh);
+
+        activeSpells.push({
+            mesh: mesh,
+            ownerId: ownerId,
+            spellName: "THORN WHIP",
+            life: 1.8,
+            type: "radius",
+            radius: 8,
+            vel: outDir.multiplyScalar(70 + Math.random() * 25),
+            update: function(dt) {
+                this.life -= dt;
+                this.mesh.position.add(this.vel.clone().multiplyScalar(dt));
+                this.mesh.scale.setScalar(this.life * 0.8);
+                return this.life <= 0;
+            }
+        });
+    }
 }
 
 function castEntangle(scene, pos, dir, ownerId) {
@@ -198,9 +215,9 @@ function castEntangle(scene, pos, dir, ownerId) {
     scene.add(mesh);
 
     // Decorate with vine bits
-    for (let i = 0; i < 15; i++) {
-        const v = new THREE.Mesh(new THREE.TorusGeometry(3, 0.5, 8, 12), new THREE.MeshBasicMaterial({color: 0x1a240c}));
-        v.position.set((Math.random()-0.5)*60, (Math.random()-0.5)*15, 0);
+    for (let i = 0; i < 25; i++) {
+        const v = new THREE.Mesh(new THREE.TorusGeometry(6, 1.0, 8, 12), new THREE.MeshBasicMaterial({color: 0x1a240c}));
+        v.position.set((Math.random()-0.5)*120, (Math.random()-0.5)*25, 0);
         v.rotation.set(Math.random(), Math.random(), Math.random());
         mesh.add(v);
     }
@@ -209,9 +226,9 @@ function castEntangle(scene, pos, dir, ownerId) {
         mesh: mesh,
         ownerId: ownerId,
         spellName: "ENTANGLE",
-        life: 6.0,
+        life: 7.0,
         type: "box",
-        size: new THREE.Vector3(60, 25, 15), 
+        size: new THREE.Vector3(120, 25, 30), // 2x wider/longer
         update: function(dt) {
             this.life -= dt;
             if (this.life < 1.0) this.mesh.material.opacity = this.life;
@@ -239,14 +256,13 @@ function castNaturesWrath(scene, pos, dir, ownerId) {
         mesh: mesh,
         ownerId: ownerId,
         spellName: "NATURE'S WRATH",
-        life: 1.5,
+        life: 1.8,
         type: "radius",
-        radius: 10,
+        radius: 120, // Massive nuke — set to max from the start
         update: function(dt) {
             this.life -= dt;
-            this.mesh.scale.setScalar(this.mesh.scale.x + dt * 120); 
-            this.radius = this.mesh.scale.x * 2;
-            this.mesh.material.opacity = this.life / 1.5;
+            this.mesh.scale.setScalar(this.mesh.scale.x + dt * 150); 
+            this.mesh.material.opacity = this.life / 1.8;
             return this.life <= 0;
         }
     });
@@ -256,11 +272,14 @@ function castNaturesWrath(scene, pos, dir, ownerId) {
 // WIND WALKER SPELLS (2)
 // ==========================================
 function castGaleBlast(scene, pos, dir, ownerId) {
-    // Visibility: Thicker particles, faster, upward trend
+    // Visibility: Use 3D BoxGeometry so they actually render from all angles
     const slantedDir = dir.clone().add(new THREE.Vector3(0, 0.2, 0)).normalize();
     for (let i = 0; i < 30; i++) {
         const outDir = slantedDir.clone().add(new THREE.Vector3((Math.random()-0.5)*1.0, (Math.random()-0.5)*0.5, (Math.random()-0.5)*1.0)).normalize();
-        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 0.4), new THREE.MeshBasicMaterial({ color: 0xccffff, transparent: true, opacity: 0.8 }));
+        const mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(5.0, 0.8, 0.8),
+            new THREE.MeshBasicMaterial({ color: 0xccffff, transparent: true, opacity: 0.95 })
+        );
         mesh.position.copy(pos).add(outDir.clone().multiplyScalar(4));
         mesh.lookAt(mesh.position.clone().add(outDir));
         scene.add(mesh);
@@ -269,15 +288,15 @@ function castGaleBlast(scene, pos, dir, ownerId) {
             mesh: mesh,
             ownerId: ownerId,
             spellName: "GALE BLAST",
-            life: 1.0,
+            life: 1.2,
             type: "radius",
-            radius: 4,
+            radius: 8,
             vel: outDir.multiplyScalar(150 + Math.random()*50),
             update: function(dt) {
                 this.life -= dt;
                 this.mesh.position.add(this.vel.clone().multiplyScalar(dt));
-                this.mesh.scale.setScalar(this.life * 1.5);
-                this.mesh.material.opacity = this.life;
+                this.mesh.scale.setScalar(Math.max(0.1, this.life * 1.5));
+                this.mesh.material.opacity = Math.max(0, this.life * 0.9);
                 return this.life <= 0;
             }
         });
@@ -292,16 +311,17 @@ function castTornado(scene, pos, dir, ownerId) {
     const mesh = new THREE.Mesh(geo, mat);
     
     mesh.position.copy(pos).add(dir.clone().multiplyScalar(10));
-    mesh.position.y -= 5;
+    mesh.position.y += 10; // Raise hitbox up so it covers the full tornado height
     scene.add(mesh);
 
     activeSpells.push({
         mesh: mesh,
         ownerId: ownerId,
         spellName: "TORNADO",
-        life: 7.0,
+        life: 8.0,
         type: "special", // game.js handles pull physics
         physics: "tornado",
+        radius: 15, // Visible hitbox for the whole tornado
         vel: dir.clone().multiplyScalar(25),
         update: function(dt) {
             this.life -= dt;
@@ -317,15 +337,16 @@ function castTornado(scene, pos, dir, ownerId) {
 function castWindShear(scene, pos, dir, ownerId) {
     // Slanted upwards
     const slantedDir = dir.clone().add(new THREE.Vector3(0, 0.1, 0)).normalize();
-    for (let i = -3; i <= 3; i++) {
-        const offsetAngle = i * 0.12;
+    // 3x projectiles
+    for (let i = -10; i <= 10; i++) {
+        const offsetAngle = i * 0.08;
         const shearDir = new THREE.Vector3(
             Math.cos(offsetAngle) * slantedDir.x - Math.sin(offsetAngle) * slantedDir.z,
             slantedDir.y,
             Math.sin(offsetAngle) * slantedDir.x + Math.cos(offsetAngle) * slantedDir.z
         ).normalize();
         
-        const geo = new THREE.PlaneGeometry(12, 0.4);
+        const geo = new THREE.PlaneGeometry(36, 1.2); // 3x size
         const mat = new THREE.MeshBasicMaterial({ color: 0xccffff, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
         const mesh = new THREE.Mesh(geo, mat);
         
@@ -337,10 +358,10 @@ function castWindShear(scene, pos, dir, ownerId) {
             mesh: mesh,
             ownerId: ownerId,
             spellName: "WIND SHEAR",
-            life: 1.8,
+            life: 2.0,
             type: "radius",
-            radius: 5,
-            vel: shearDir.multiplyScalar(180),
+            radius: 15, // 3x larger hitbox
+            vel: shearDir.multiplyScalar(200),
             update: function(dt) {
                 this.life -= dt;
                 this.mesh.position.add(this.vel.clone().multiplyScalar(dt));
@@ -366,10 +387,10 @@ function castWaterBall(scene, pos, dir, ownerId) {
         mesh: mesh,
         ownerId: ownerId,
         spellName: "WATER BALL",
-        life: 3.0,
+        life: 3.5,
         type: "radius",
-        radius: 4,
-        vel: dir.clone().add(new THREE.Vector3(0, 0.1, 0)).normalize().multiplyScalar(120),
+        radius: 8, // 2x larger
+        vel: dir.clone().add(new THREE.Vector3(0, 0.1, 0)).normalize().multiplyScalar(130),
         time: 0,
         update: function(dt) {
             this.life -= dt;
@@ -417,15 +438,16 @@ function castFrostNova(scene, pos, dir, ownerId) {
 }
 
 function castTsunami(scene, pos, dir, ownerId) {
-    // 30ft tall (10u), 200ft wide (60u)
-    const geo = new THREE.BoxGeometry(200, 30, 8); 
+    const groundY = pos.y - 2;
+    // 300ft tall (100u), 400ft wide (120u)
+    const geo = new THREE.BoxGeometry(400, 300, 20); 
     const mat = new THREE.MeshPhongMaterial({ color: 0x003366, transparent: true, opacity: 0.8, emissive: 0x001122 });
     const mesh = new THREE.Mesh(geo, mat);
     
     // Position on ground in front
     const flatDir = new THREE.Vector3(dir.x, 0, dir.z).normalize();
-    mesh.position.copy(pos).add(flatDir.clone().multiplyScalar(20));
-    mesh.position.y -= 5;
+    mesh.position.copy(pos).add(flatDir.clone().multiplyScalar(40));
+    mesh.position.setY(groundY + 150);
     
     mesh.lookAt(mesh.position.clone().add(flatDir));
     scene.add(mesh);
@@ -434,11 +456,11 @@ function castTsunami(scene, pos, dir, ownerId) {
         mesh: mesh,
         ownerId: ownerId,
         spellName: "TSUNAMI",
-        life: 5.0,
+        life: 6.0,
         time: 0,
         type: "box",
-        size: new THREE.Vector3(200, 40, 30), // Large collision area
-        vel: flatDir.clone().multiplyScalar(75),
+        size: new THREE.Vector3(400, 300, 60), // Massive collision area
+        vel: flatDir.clone().multiplyScalar(85),
         update: function(dt) {
             this.life -= dt;
             this.time += dt;
@@ -454,21 +476,21 @@ function castTsunami(scene, pos, dir, ownerId) {
 // ARCANE SCHOLAR SPELLS (4)
 // ==========================================
 function castArcaneMissiles(scene, pos, dir, ownerId) {
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) { // 5 missiles
         setTimeout(() => {
-            const geo = new THREE.IcosahedronGeometry(1.2, 1);
+            const geo = new THREE.IcosahedronGeometry(2.4, 1); // 2x size
             const mat = new THREE.MeshBasicMaterial({ color: 0xcc00ff, transparent: true, opacity: 0.9 });
             const mesh = new THREE.Mesh(geo, mat);
-            mesh.position.copy(pos).add(dir.clone().multiplyScalar(5)).add(new THREE.Vector3((Math.random()-0.5)*5, (Math.random()-0.5)*5, (Math.random()-0.5)*5));
+            mesh.position.copy(pos).add(dir.clone().multiplyScalar(5)).add(new THREE.Vector3((Math.random()-0.5)*8, (Math.random()-0.5)*8, (Math.random()-0.5)*8));
             scene.add(mesh);
 
             activeSpells.push({
                 mesh: mesh,
                 ownerId: ownerId,
                 spellName: "ARCANE MISSILES",
-                life: 3.5,
+                life: 4.5,
                 type: "radius",
-                radius: 4,
+                radius: 8, // 2x larger
                 vel: dir.clone().multiplyScalar(100),
                 targetId: null,
                 update: function(dt, players) {
@@ -544,15 +566,14 @@ function castMagicBurst(scene, pos, dir, ownerId) {
         mesh: mesh,
         ownerId: ownerId,
         spellName: "MAGIC BURST",
-        life: 2.0,
+        life: 2.5,
         type: "radius",
-        radius: 10,
+        radius: 200, // Huge nuke hitbox from the start
         update: function(dt) {
             this.life -= dt;
-            const size = (2.0 - this.life) * 80; // massive expand
+            const size = (2.5 - this.life) * 100; // massive expand
             this.mesh.scale.setScalar(size);
-            this.radius = size * 0.8;
-            this.mesh.material.opacity = this.life / 2;
+            this.mesh.material.opacity = this.life / 2.5;
             return this.life <= 0;
         }
     });
@@ -605,8 +626,8 @@ function castFlameBreath(scene, pos, dir, ownerId) {
         ownerId: ownerId,
         spellName: "FLAME BREATH",
         type: "radius",
+        radius: 30, // Absolute massive cone hitbox
         mesh: particles[0].mesh,
-        radius: 12,
         update: function(dt) {
             let allDead = true;
             for (let p of this.parts) {
@@ -642,11 +663,11 @@ function castFireSpears(scene, pos, dir, ownerId) {
         update: function(dt, players) {
             this.life -= dt;
             // Rain down fire bolts
-            if (Math.random() > 0.6) {
-                const boltGeo = new THREE.CylinderGeometry(0.5, 0.5, 10, 4);
+            if (Math.random() > 0.4) { // More frequent bolts
+                const boltGeo = new THREE.CylinderGeometry(1.0, 1.0, 15, 4);
                 const boltMat = new THREE.MeshBasicMaterial({ color: 0xff4400 });
                 const bolt = new THREE.Mesh(boltGeo, boltMat);
-                bolt.position.set(this.mesh.position.x + (Math.random()-0.5)*40, this.mesh.position.y, this.mesh.position.z + (Math.random()-0.5)*40);
+                bolt.position.set(this.mesh.position.x + (Math.random()-0.5)*80, this.mesh.position.y, this.mesh.position.z + (Math.random()-0.5)*80); // 2x coverage
                 bolt.rotation.x = Math.PI/2; // Point downwards
                 scene.add(bolt);
 
@@ -654,10 +675,10 @@ function castFireSpears(scene, pos, dir, ownerId) {
                     mesh: bolt, 
                     ownerId: this.ownerId, 
                     spellName: "FIRE SPEARS_RAIN", 
-                    life: 2.0, type: "radius", radius: 5,
+                    life: 2.5, type: "radius", radius: 10, // Larger bolts
                     update: function(dt) {
                         this.life -= dt;
-                        this.mesh.position.y -= dt * 150;
+                        this.mesh.position.y -= dt * 180;
                         return this.life <= 0 || this.mesh.position.y < -10;
                     }
                 });
