@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Runemania - Marketplace</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
+
+        body {
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            background-color: #1a1a1a;
+            background-image:
+                linear-gradient(rgba(20, 20, 20, 0.9) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(20, 20, 20, 0.9) 1px, transparent 1px);
+            background-size: 30px 30px;
+            font-family: 'Press Start 2P', cursive;
+            color: #fff;
+            user-select: none;
+        }
+
+        .marketplace-panel {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #ffd700;
+            text-shadow: 3px 3px 0px #aa0000;
+            font-size: 24px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .pixel-banner {
+            display: inline-block;
+            background-color: #4a148c;
+            border: 4px solid #7b1fa2;
+            color: #fff;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-family: 'Press Start 2P', cursive;
+            margin-bottom: 20px;
+            box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.5);
+            transition: transform 0.1s, background-color 0.2s;
+            text-align: center;
+        }
+
+        .pixel-banner:hover {
+            background-color: #6a1b9a;
+            transform: translateY(-2px);
+            box-shadow: 6px 6px 0px rgba(0, 0, 0, 0.5);
+        }
+
+        .wallet-section {
+            background-color: #2a2a2a;
+            border: 4px solid #555;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+            box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.5);
+        }
+
+        .wallet-section h2 {
+            color: #ffd700;
+            font-size: 12px;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+
+        .wallet-addr {
+            font-family: 'VT323', monospace;
+            font-size: 18px;
+            color: #aaa;
+            word-break: break-all;
+        }
+
+        .connect-btn {
+            background-color: #4a148c;
+            border: 4px solid #7b1fa2;
+            color: #fff;
+            padding: 12px 24px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.5);
+            transition: transform 0.1s, background-color 0.2s;
+        }
+
+        .connect-btn:hover {
+            background-color: #6a1b9a;
+            transform: translateY(-2px);
+        }
+
+        .connect-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .item-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 20px;
+        }
+
+        .item-card {
+            background-color: #2a2a2a;
+            border: 4px solid #555;
+            border-radius: 8px;
+            padding: 16px;
+            box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: border-color 0.2s;
+        }
+
+        .item-card:hover {
+            border-color: #ffd700;
+        }
+
+        .item-image {
+            width: 120px;
+            height: 120px;
+            background: #111;
+            border: 3px solid #444;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px;
+            overflow: hidden;
+        }
+
+        .item-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .item-image .placeholder {
+            font-family: 'VT323', monospace;
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+            padding: 8px;
+        }
+
+        .item-name {
+            color: #ffd700;
+            font-size: 10px;
+            text-align: center;
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+
+        .item-cost {
+            font-family: 'VT323', monospace;
+            font-size: 18px;
+            color: #aaa;
+            margin-bottom: 12px;
+        }
+
+        .purchase-btn {
+            background-color: #4CAF50;
+            border: 3px solid #2E7D32;
+            color: white;
+            padding: 10px 16px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 10px;
+            cursor: pointer;
+            border-radius: 4px;
+            box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.5);
+            transition: transform 0.1s, background-color 0.2s;
+        }
+
+        .purchase-btn:hover {
+            background-color: #45a049;
+            transform: translateY(-2px);
+        }
+
+        .purchase-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .message {
+            font-family: 'VT323', monospace;
+            font-size: 18px;
+            padding: 10px;
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .message.error { color: #f44336; }
+        .message.success { color: #4CAF50; }
+        .message.info { color: #ffd700; }
+
+        .item-loading, .item-empty {
+            grid-column: 1 / -1;
+            font-family: 'VT323', monospace;
+            font-size: 22px;
+            color: #888;
+            text-align: center;
+            padding: 40px;
+        }
+        .api-warning {
+            background: #4a148c;
+            border: 4px solid #7b1fa2;
+            color: #ffd700;
+            padding: 16px;
+            margin-bottom: 20px;
+            font-family: 'VT323', monospace;
+            font-size: 20px;
+            text-align: center;
+            display: none;
+        }
+        .item-image .placeholder-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="marketplace-panel">
+        <a href="index.html" class="pixel-banner">&larr; BACK</a>
+        <h1>RUNEMANIA MARKETPLACE</h1>
+
+        <div class="wallet-section">
+            <h2>WALLET</h2>
+            <div id="wallet-status">
+                <button class="connect-btn" id="connect-btn">CONNECT CROSSMARK</button>
+                <span class="wallet-addr" id="wallet-addr" style="display:none;"></span>
+            </div>
+        </div>
+
+        <div id="api-warning" class="api-warning">API not connected. Run in project folder: npm start</div>
+        <div id="message" class="message" style="display:none;"></div>
+
+        <div class="item-grid" id="item-grid">
+            <div class="item-loading" id="item-loading">Loading items...</div>
+        </div>
+    </div>
+
+    <script type="application/json" id="fallback-items">[{"id":"blood-drain","name":"BLOOD DRAIN","description":"A dark spell that siphons life from foes. Blood Warlock signature spell.","cost":1000,"rarity":"uncommon","type":"spell","imagePrompt":"Pixel art game item icon, dark red blood magic spell, vampiric drain effect, dark fantasy, 400x400"},{"id":"crimson-spikes","name":"CRIMSON SPIKES","description":"Sharp blood spikes erupt from the ground. Blood Warlock spell.","cost":1500,"rarity":"rare","type":"spell","imagePrompt":"Pixel art game item icon, red spiky magic, dark fantasy, blood warlock spell, 400x400"},{"id":"fireball","name":"FIREBALL","description":"Classic fire mage projectile. Burns through enemies.","cost":800,"rarity":"common","type":"spell","imagePrompt":"Pixel art game item icon, orange fireball spell, fantasy RPG, 400x400"},{"id":"nature-wrath","name":"NATURE'S WRATH","description":"Channel the fury of nature. Nature Druid ultimate spell.","cost":2000,"rarity":"legendary","type":"spell","imagePrompt":"Pixel art game item icon, green nature magic, vines and thorns, dark fantasy, 400x400"},{"id":"arcane-missiles","name":"ARCANE MISSILES","description":"Purple arcane energy bolts. Arcane Scholar spell.","cost":1200,"rarity":"uncommon","type":"spell","imagePrompt":"Pixel art game item icon, purple arcane magic missiles, fantasy wizard spell, 400x400"},{"id":"skin-blood-warlock","name":"BLOOD WARLOCK SKIN","description":"Dark red wizard skin. Unlock the Blood Warlock class.","cost":3000,"rarity":"rare","type":"skin","imagePrompt":"Pixel art game character skin, red wizard robe, dark fantasy, low poly style, 400x400"},{"id":"skin-fire-mage","name":"FIRE MAGE SKIN","description":"Classic orange fire wizard skin. Default Fire Mage look.","cost":500,"rarity":"common","type":"skin","imagePrompt":"Pixel art game character skin, orange fire wizard robe, fantasy, 400x400"},{"id":"skin-nature-druid","name":"NATURE DRUID SKIN","description":"Green nature wizard skin. Nature Druid class.","cost":2500,"rarity":"rare","type":"skin","imagePrompt":"Pixel art game character skin, green druid wizard robe, nature magic, 400x400"}]</script>
+    <script>
+        (function () {
+            const API = (typeof window !== 'undefined' && window.location?.origin)
+                ? window.location.origin + '/api'
+                : '/api';
+            let walletAddress = null;
+
+            function getSdk() {
+                return window.xrpl?.crossmark || window.crossmark;
+            }
+
+            async function connectWallet() {
+                const btn = document.getElementById('connect-btn');
+                const addrEl = document.getElementById('wallet-addr');
+                const sdk = getSdk();
+                if (!sdk) {
+                    showMessage('Install Crossmark wallet extension to connect.', 'error');
+                    return;
+                }
+                btn.disabled = true;
+                btn.textContent = 'CONNECTING...';
+                try {
+                    const signIn = sdk.async?.signInAndWait || sdk.methods?.signInAndWait;
+                    if (!signIn) {
+                        showMessage('Crossmark signIn not available.', 'error');
+                        return;
+                    }
+                    const res = await signIn.call(sdk);
+                    const addr = res?.response?.data?.address || res?.data?.address || res?.address || (typeof res?.data === 'string' ? res.data : null);
+                    if (addr && typeof addr === 'string') {
+                        walletAddress = addr;
+                        addrEl.textContent = addr;
+                        addrEl.style.display = 'block';
+                        btn.style.display = 'none';
+                        showMessage('Wallet connected.', 'success');
+                    } else {
+                        console.warn('Crossmark response:', res);
+                        showMessage('Could not get address. Make sure you select an account and confirm in Crossmark.', 'error');
+                    }
+                } catch (e) {
+                    console.error('Crossmark connect error:', e);
+                    showMessage(e?.message || 'Connection failed.', 'error');
+                }
+                btn.disabled = false;
+                btn.textContent = 'CONNECT CROSSMARK';
+            }
+
+            function showMessage(text, type) {
+                const el = document.getElementById('message');
+                el.textContent = text;
+                el.className = 'message ' + (type || 'info');
+                el.style.display = 'block';
+                setTimeout(() => { el.style.display = 'none'; }, 5000);
+            }
+
+            async function loadItems() {
+                const grid = document.getElementById('item-grid');
+                const loadingEl = document.getElementById('item-loading');
+                let items = [];
+                try {
+                    const res = await fetch(API + '/marketplace/items');
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok) {
+                        items = Array.isArray(data) ? data : (data.items || []);
+                    }
+                } catch (e) {
+                    console.warn('API fetch failed, using fallback items:', e?.message);
+                }
+                if (items.length === 0) {
+                    const fallback = document.getElementById('fallback-items');
+                    if (fallback) {
+                        try {
+                            items = JSON.parse(fallback.textContent || '[]');
+                        } catch (_) {}
+                    }
+                }
+                if (loadingEl) loadingEl.remove();
+                if (items.length === 0) {
+                    grid.innerHTML = '<div class="item-empty">No items in catalog.</div>';
+                    return;
+                }
+                renderItems(items);
+            }
+
+            function dropsToXrp(drops) {
+                return (Number(drops) / 1e6).toFixed(6);
+            }
+
+            function renderItems(items) {
+                const grid = document.getElementById('item-grid');
+                grid.innerHTML = items.map(item => {
+                    const costXrp = dropsToXrp(item.cost);
+                    return `
+                    <div class="item-card" data-id="${item.id}">
+                        <div class="item-image" data-id="${item.id}">
+                            <span class="placeholder">Loading...</span>
+                        </div>
+                        <div class="item-name">${item.name}</div>
+                        <div class="item-cost">${costXrp} XRP</div>
+                        <button class="purchase-btn" data-id="${item.id}">PURCHASE</button>
+                    </div>
+                `;
+                }).join('');
+
+                grid.querySelectorAll('.purchase-btn').forEach(btn => {
+                    btn.onclick = () => purchase(btn.dataset.id);
+                });
+
+                items.forEach(item => loadImage(item));
+            }
+
+            async function loadImage(item) {
+                const box = document.querySelector(`.item-image[data-id="${item.id}"]`);
+                if (!box) return;
+                const place = () => {
+                    const svg = placeholderSvg(item.rarity);
+                    box.innerHTML = '<img class="placeholder-img" src="' + svg + '" alt="">';
+                };
+                if (item.staticImage) {
+                    const url = item.staticImage.startsWith('/') ? (window.location.origin + item.staticImage) : item.staticImage;
+                    box.innerHTML = '<img src="' + url + '" alt="">';
+                    return;
+                }
+                try {
+                    const res = await fetch(API + '/marketplace/generate-image', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            itemName: item.name,
+                            itemDescription: item.description,
+                            itemId: item.id,
+                            imagePrompt: item.imagePrompt,
+                            rarity: item.rarity
+                        })
+                    });
+                    if (!res.ok) { place(); return; }
+                    const data = await res.json().catch(() => null);
+                    if (data?.imageUrl) {
+                        box.innerHTML = '<img src="' + data.imageUrl + '" alt="">';
+                    } else {
+                        place();
+                    }
+                } catch (e) {
+                    place();
+                }
+            }
+
+            async function purchase(itemId) {
+                if (!walletAddress) {
+                    showMessage('Connect your wallet first.', 'error');
+                    return;
+                }
+                const btn = document.querySelector(`.purchase-btn[data-id="${itemId}"]`);
+                if (btn) btn.disabled = true;
+                showMessage('Minting...', 'info');
+                try {
+                    const res = await fetch(API + '/lootbox/purchase', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ itemId, walletAddress })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok && data.success) {
+                        showMessage('NFT minted! Accept the offer in Crossmark to receive it.', 'success');
+                        const card = document.querySelector(`.item-card[data-id="${itemId}"]`);
+                        if (card) card.remove();
+                        return;
+                    } else if (res.status === 404) {
+                        showMessage('API not found. Run: npm start', 'error');
+                    } else {
+                        throw new Error(data.error || 'Purchase failed');
+                    }
+                } catch (e) {
+                    const msg = (e?.message || '').includes('JSON') ? 'API not found. Run: npm start' : (e?.message || 'Purchase failed');
+                    showMessage(msg, 'error');
+                }
+                if (btn) btn.disabled = false;
+            }
+
+            function placeholderSvg(rarity) {
+                const colors = { common: '#888', uncommon: '#4CAF50', rare: '#2196F3', legendary: '#ffd700' };
+                const c = colors[rarity] || '#666';
+                return 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect fill="' + c + '" width="120" height="120"/><text x="60" y="65" fill="#111" font-size="20" font-family="monospace" text-anchor="middle">?</text></svg>');
+            }
+
+            async function checkApi() {
+                try {
+                    const r = await fetch(API + '/health');
+                    const el = document.getElementById('api-warning');
+                    if (el) el.style.display = r.ok ? 'none' : 'block';
+                } catch (_) {
+                    const el = document.getElementById('api-warning');
+                    if (el) el.style.display = 'block';
+                }
+            }
+
+            document.getElementById('connect-btn').onclick = connectWallet;
+            checkApi();
+            loadItems();
+        })();
+    </script>
+</body>
+
+</html>
