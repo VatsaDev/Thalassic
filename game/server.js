@@ -1,7 +1,29 @@
 const express = require('express');
+const path = require('path');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
+
+app.use(express.json());
+
+// Health check for API
+app.get('/api/health', (req, res) => res.json({ ok: true }));
+
+// Fallback items endpoint (in case router fails)
+app.get('/api/marketplace/items', (req, res) => {
+  try {
+    const items = require(path.join(__dirname, '../config/items.json'));
+    res.json(items);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// API routes (must be before static so /api/* is handled)
+const lootboxRouter = require(path.join(__dirname, '../api/routes/lootbox'));
+const marketplaceRouter = require(path.join(__dirname, '../api/routes/marketplace'));
+app.use('/api/lootbox', lootboxRouter);
+app.use('/api/marketplace', marketplaceRouter);
 
 // Serve static files from current directory
 app.use(express.static(__dirname));

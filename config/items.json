@@ -1,0 +1,82 @@
+[
+  {
+    "id": "blood-drain",
+    "name": "BLOOD DRAIN",
+    "description": "A dark spell that siphons life from foes. Blood Warlock signature spell.",
+    "cost": 1000,
+    "rarity": "uncommon",
+    "type": "spell",
+    "imagePrompt": "Pixel art game item icon, dark red blood magic spell, vampiric drain effect, dark fantasy, 400x400",
+    "staticImage": "/assets/potion.png"
+  },
+  {
+    "id": "crimson-spikes",
+    "name": "CRIMSON SPIKES",
+    "description": "Sharp blood spikes erupt from the ground. Blood Warlock spell.",
+    "cost": 1500,
+    "rarity": "rare",
+    "type": "spell",
+    "imagePrompt": "Pixel art game item icon, red spiky magic, dark fantasy, blood warlock spell, 400x400",
+    "staticImage": "/assets/mspike.png"
+  },
+  {
+    "id": "fireball",
+    "name": "FIREBALL",
+    "description": "Classic fire mage projectile. Burns through enemies.",
+    "cost": 800,
+    "rarity": "common",
+    "type": "spell",
+    "imagePrompt": "Pixel art game item icon, orange fireball spell, fantasy RPG, 400x400",
+    "staticImage": "/assets/pfireball.png"
+  },
+  {
+    "id": "nature-wrath",
+    "name": "NATURE'S WRATH",
+    "description": "Channel the fury of nature. Nature Druid ultimate spell.",
+    "cost": 2000,
+    "rarity": "legendary",
+    "type": "spell",
+    "imagePrompt": "Pixel art game item icon, green nature magic, vines and thorns, dark fantasy, 400x400",
+    "staticImage": "/assets/potion2.png"
+  },
+  {
+    "id": "arcane-missiles",
+    "name": "ARCANE MISSILES",
+    "description": "Purple arcane energy bolts. Arcane Scholar spell.",
+    "cost": 1200,
+    "rarity": "uncommon",
+    "type": "spell",
+    "imagePrompt": "Pixel art game item icon, purple arcane magic missiles, fantasy wizard spell, 400x400",
+    "staticImage": "/assets/missile.png"
+  },
+  {
+    "id": "skin-blood-warlock",
+    "name": "BLOOD WARLOCK SKIN",
+    "description": "Dark red wizard skin. Unlock the Blood Warlock class.",
+    "cost": 3000,
+    "rarity": "rare",
+    "type": "skin",
+    "imagePrompt": "Pixel art game character skin, red wizard robe, dark fantasy, low poly style, 400x400",
+    "staticImage": "/assets/armor1.png"
+  },
+  {
+    "id": "skin-fire-mage",
+    "name": "FIRE MAGE SKIN",
+    "description": "Classic orange fire wizard skin. Default Fire Mage look.",
+    "cost": 500,
+    "rarity": "common",
+    "type": "skin",
+    "imagePrompt": "Pixel art game character skin, orange fire wizard robe, fantasy, 400x400",
+    "staticImage": "/assets/parmor.png"
+  },
+  {
+    "id": "skin-nature-druid",
+    "name": "NATURE DRUID SKIN",
+    "description": "Green nature wizard skin. Nature Druid class.",
+    "cost": 2500,
+    "rarity": "rare",
+    "type": "skin",
+    "imagePrompt": "Pixel art game character skin, green druid wizard robe, nature magic, 400x400",
+    "staticImage": "/assets/armor2.png"
+  }
+]
