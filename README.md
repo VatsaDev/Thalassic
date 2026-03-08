@@ -1,44 +1,87 @@
-# Thalassic: an MMO crypto economy
+# Thalassic
 
-* the water name is just because everything at this event is something water sounding (sui droplet, ripple, etc), but also Thalassic is a cool dino Vibe, low poly dino PvP does sound fun
+**Thalassic** is a real-time wizard PvP arena that combines fast-paced multiplayer gameplay with true digital ownership. Players choose elemental wizard classes, battle using unique spells, and earn items that exist as verifiable NFTs on the XRP Ledger.
 
-Sui: nothing but the CTF I think [DOUBLE CHECK THIS]
-Ripple: 1500/1000/500 usd in prizes
-Pinata: 500/member in prizes 
+The project demonstrates how **multiplayer gaming, AI-generated content, and blockchain ownership** can work together to create a new type of player-driven game economy.
 
-https://www.ebay.com/itm/186877153739?chn=ps&mkevt=1&mkcid=28&google_free_listing_action=view_item
+---
 
-## thoughts on prizes 
+## Try It Out
 
- - was honestly hoping for more from SUI, looks like they're just new to platforms and just trying to onboard people, wish they took some risk with a prize though 
- - Ripple looks strong, has an ecosystem, is rich, they want new things, new features in their ecosystem, new markets, new opportunites that use their features, etc 
- - Pinatas no longer at its peak, want something new coming out of a hackathon people could use as a pivot, willing to reward it 
+Play the live prototype:
 
-## why we win
+**http://34.122.221.214:3000/**
 
- - The gaming market for items is over 400 billion dollars, Defi can barely get in like 20B, there is so much more economy to put onchain, of which very very little [SELL THIS SOMEHOW, THATS THE KEY FEATURE, GET THAT BAG]
- - we need more quality DeFI gaming thats gameplay first, and treats DeFI simply as a market mechanism, prevent hyperinflation and other collapse [STABILITY AS A SELLING POINT ??]
- - brand new market, brand new systems, brand new opportunites [OPPORTUNITY FOR NEW FINANCIAL SYSTEMS]
+Choose a wizard class, enter the arena, and battle other players in real-time spell combat.
 
-## specifics
+---
 
-Pinata:
+## Game Features
 
- - general data storage on pinata?
- - Transparency: Users are tagged, allow for data dump downloads?
- - Store in game items on pinata, clear user ownership??
- - Reliability: basing off of innovation, if we can keep uptime for the event and show some level of stress testing with users and all that could be good
- - Innovation: using pinata like spacetimeDB for realtime storage using some hacky approach, represents platform flexibility
+### Real-Time PvP Combat
+- Multiplayer wizard arena
+- 5-minute timed matches
+- Spell-based combat system
+- Death and respawn mechanics
+- Live kill/death tracking
 
-Ripple:
+### Wizard Classes
+Players can choose from multiple elemental classes:
 
- - building an MVP that uses XRP Ledger core features to solve a real world problem (ex. us and gaming)
-     - feat here 
+- Fire Mage
+- Blood Warlock
+- Nature Druid
+- Arcane Scholar
+- Wind Walker
+- Water Shaper
 
- - flows using stablecoins (testnet ICO during the event? would be a high agency move)
- - lending/borrowing (have a goblin shack/bank thing in-game, offer loans with rare item collatoral??)
- - smart escrow (no ideas on this nisch??)
- - Multi-purpose tokens (loans, in-game currency, real-world conversion, item markets, tournament/PVP prizes??)
- - batched transactions (probably a necessity for a massive MMO? if the NPCs have transactions between themselves or if the world gives you money for certain actions (or stuff like dying returns currency to the land, so smart contracts everywhere), need batched transactions)
- - this is both microfinance/tokenized assets? I dunno
- 
+Each class has unique spells and visual effects.
+
+### Spell System
+Examples of abilities include:
+
+- Fireball
+- Blood Drain
+- Crimson Spikes
+- Arcane Missiles
+- Nature's Wrath
+- Tornado
+
+Spell effects are rendered in real time in the 3D environment.
+
+---
+
+## Web3 Economy
+
+Thalassic introduces **true ownership of in-game items**.
+
+Spells and skins can exist as **XRPL NFTs**, allowing players to own their items independently of the game server.
+
+### XRPL Integration
+
+The project uses the XRP Ledger's **NFToken standard**.
+
+Transactions used:
+
+- `NFTokenMint`
+- `NFTokenCreateOffer`
+- `NFTokenAcceptOffer`
+
+Ownership is verifiable directly on the ledger.
+
+---
+
+## Decentralized Storage
+
+All NFT metadata is stored using **IPFS via Pinata**.
+
+Each item contains:
+
+- name
+- description
+- rarity
+- image URI
+- attributes
+
+This ensures item data is **persistent, transparent, and decentralized**.
+
