@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNoise2D } from 'https://unpkg.com/simplex-noise@4.0.1/dist/esm/simplex-noise.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 /**
  * ============================================================================
@@ -8,7 +9,9 @@ import { createNoise2D } from 'https://unpkg.com/simplex-noise@4.0.1/dist/esm/si
  * ============================================================================
  */
 const SERVER_URL = window.location.origin; 
-const socket = io(SERVER_URL);
+const socket = io(SERVER_URL, { 
+    autoConnect: false 
+});
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 20000);
@@ -21,6 +24,21 @@ document.body.appendChild(renderer.domElement);
 
 const noise2D = createNoise2D();
 const clock = new THREE.Clock();
+
+function seededRandom(s) {
+    const x = Math.sin(s) * 10000;
+    return x - Math.floor(x);
+}
+
+const wizardModels = [];
+const modelFiles = [
+    'assets/wizord_orang.glb',
+    'assets/wizord_green.glb',
+    'assets/wizord_sky.glb',
+    'assets/wizord_blu.glb',
+    'assets/wizord_purp.glb',
+    'assets/wizord_red.glb'
+];
 
 /**
  * ============================================================================
@@ -59,6 +77,7 @@ function getTerrainHeight(x, z) {
  * 3. SHADERS (WINDY FOLIAGE SYSTEM)
  * ============================================================================
  */
+
 const foliageUniforms = {
     time: { value: 0 },
     swayStrength: { value: 0.2 },
@@ -113,83 +132,86 @@ const foliageFragmentShader = `
 
 // 1. Tapered Grass Geometry (A 3D "Blade" made of triangles)
 
-function createGrassGeometry() {
-    const geometries = [];
-    const bladeCount = 25; // Grow 25 blades in a cluster
-    const radius = 1.5;   // Spreading area
-
-    for (let i = 0; i < bladeCount; i++) {
-        const width = 0.15 + Math.random() * 0.1;
-        const height = 1.5 + Math.random() * 1.5;
-        
-        // Define one blade
-        const geo = new THREE.BufferGeometry();
-        const vertices = new Float32Array([
-            -width, 0, 0,  width, 0, 0,  0, height, 0, // Front
-            -width, 0, 0,  0, height, 0,  width, 0, 0, // Back
-            0, 0, -width,  0, 0, width,  0, height, 0, // Side 1
-            0, 0, -width,  0, height, 0,  0, 0, width  // Side 2
-        ]);
-        geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-
-        // Randomly position and rotate each blade within the cluster
-        const angle = Math.random() * Math.PI * 2;
-        const dist = Math.sqrt(Math.random()) * radius;
-        geo.rotateY(Math.random() * Math.PI);
-        geo.translate(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
-
-        geometries.push(geo);
+function colorGeo(geo, colorHex) {
+    const count = geo.attributes.position.count;
+    const colors = new Float32Array(count * 3);
+    const color = new THREE.Color(colorHex);
+    for (let i = 0; i < count; i++) {
+        colors[i * 3] = color.r;
+        colors[i * 3 + 1] = color.g;
+        colors[i * 3 + 2] = color.b;
     }
-
-    // Merge all blades into one geometry
-    const mergedGeo = mergeGeometries(geometries);
-    mergedGeo.computeVertexNormals();
-    return mergedGeo;
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    return geo;
 }
 
-// 2. Low-Poly Pine Tree Geometry
-function createPineGeometry() {
-    const tiers = [];
-    
-    // 1. The Trunk (Cylinder)
-    const trunkGeo = new THREE.CylinderGeometry(0.5, 0.7, 3, 6);
-    trunkGeo.translate(0, 1.5, 0); // Lift so bottom is at 0
-    tiers.push(trunkGeo);
+function createGrassGeometry() {
+    const geometries = [];
+    for (let i = 0; i < 15; i++) {
+        const w = 0.2, h = 10.0; // 4x taller
+        const geo = new THREE.BufferGeometry();
+        const verts = new Float32Array([-w,0,0, w,0,0, 0,h,0,  0,0,-w, 0,0,w, 0,h,0]);
+        geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+        
+        // Randomly scatter blades in a small bunch
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.sqrt(Math.random()) * 1.5;
+        geo.rotateY(Math.random());
+        geo.translate(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+        geometries.push(colorGeo(geo, 0x3a6b32));
+    }
+    return mergeGeometries(geometries);
+}
 
-    // 2. The Leaves (Stacked Cones)
-    const tierCount = 3;
-    for (let i = 0; i < tierCount; i++) {
-        const size = 4 - (i * 0.8);   // Bottom tier is widest
-        const height = 5 - (i * 0.5); // Each tier slightly shorter
-        
-        // Use 6-8 segments for that "low poly" look from your image
-        const cone = new THREE.ConeGeometry(size, height, 7); 
-        
-        // Stack them vertically with an overlap
-        const yPos = 3 + (i * 2.5); 
-        cone.translate(0, yPos, 0);
-        
+function createPineGeometry() {
+    // 1. Trunk
+    let trunk = new THREE.CylinderGeometry(0.4, 0.6, 4, 6);
+    trunk.translate(0, 2, 0);
+    colorGeo(trunk, 0x4d2911); // Brown
+
+    // 2. Leaves (3 layers)
+    const tiers = [trunk];
+    for (let i = 0; i < 3; i++) {
+        let cone = new THREE.ConeGeometry(3.5 - (i * 0.8), 5, 8);
+        cone.translate(0, 5 + (i * 3), 0);
+        colorGeo(cone, 0x1a331a); // Dark Green
         tiers.push(cone);
     }
 
-    const mergedTree = mergeGeometries(tiers);
-    mergedTree.computeVertexNormals();
-    return mergedTree;
+    // Merge and make "Low Poly" (Faceted)
+    return mergeGeometries(tiers).toNonIndexed();
 }
 
-const grassMat = new THREE.ShaderMaterial({
-    vertexShader: foliageVertexShader,
-    fragmentShader: foliageFragmentShader,
-    uniforms: { ...foliageUniforms, diffuse: { value: new THREE.Color(0x3a6b32) } },
-    side: THREE.DoubleSide
+const foliageMaterial = new THREE.MeshPhongMaterial({
+    vertexColors: true, 
+    flatShading: true,
+    shininess: 0
 });
 
-const pineMat = new THREE.ShaderMaterial({
-    vertexShader: foliageVertexShader,
-    fragmentShader: foliageFragmentShader,
-    uniforms: { ...foliageUniforms, swayStrength: { value: 0.05 }, diffuse: { value: new THREE.Color(0x1a331a) } },
-    flatShading: true
-});
+// We store the shader here so we can update time in the loop
+let foliageShader = null;
+
+foliageMaterial.onBeforeCompile = (shader) => {
+    shader.uniforms.time = { value: 0 };
+    foliageShader = shader;
+    shader.vertexShader = `
+        uniform float time;
+        ${shader.vertexShader}
+    `.replace(
+        `#include <begin_vertex>`,
+        `
+        #include <begin_vertex>
+        // Only sway based on height (position.y)
+        float sway = sin(time * 2.0 + position.x * 0.5) * (transformed.y * 0.05);
+        transformed.x += sway;
+        transformed.z += sway;
+        `
+    );
+};
+
+// Use this for both
+const grassMat = foliageMaterial;
+const pineMat = foliageMaterial;
 
 /**
  * ============================================================================
@@ -206,67 +228,103 @@ function createChunk(xOffset, zOffset) {
     const treeMatrices = [];
     const dummy = new THREE.Object3D();
 
+    const massiveTreeWorldX = 500; // Change these to your desired world location
+    const massiveTreeWorldZ = 500;
+    
+    let massiveTreePlacedInThisChunk = false;
+
     for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i) + xOffset;
-        const z = pos.getZ(i) + zOffset;
-        const y = getTerrainHeight(x, z);
+        const localX = pos.getX(i);
+        const localZ = pos.getZ(i);
+
+        const worldX = localX + xOffset;
+        const worldZ = localZ + zOffset;
+        const y = getTerrainHeight(worldX, worldZ);
+
+        // Apply height and color
         pos.setY(i, y);
-
         const color = new THREE.Color();
-        if (y > 1000) color.setHex(0xffffff); // Snow
-        else if (y > 400) color.setHex(0x555555); // Rock
-        else color.setHex(0x2d5a27); // Grassland
-
+        if (y > 1000) color.setHex(0xffffff);
+        else if (y > 400) color.setHex(0x555555);
+        else color.setHex(0x2d5a27);
+        
         colors[i * 3] = color.r;
         colors[i * 3 + 1] = color.g;
         colors[i * 3 + 2] = color.b;
 
-        // Vegetation placement (Only in valleys)
-        if (y < 200 && i % 15 === 0) {
-            const random = Math.random();
-            if (random > 0.98) { // Spawn Tree
-                dummy.position.set(x, y, z);
-                dummy.scale.setScalar(0.8 + Math.random() * 1.5);
-                dummy.rotation.y = Math.random() * Math.PI;
-                dummy.updateMatrix();
-                treeMatrices.push(dummy.matrix.clone());
-            } else if (random > 0.8) { // Spawn Grass
-                dummy.position.set(x, y, z);
-                dummy.scale.setScalar(0.5 + Math.random() * 0.5);
-                dummy.rotation.y = Math.random() * Math.PI;
-                dummy.updateMatrix();
-                grassMatrices.push(dummy.matrix.clone());
+        // --- 2. UNIQUE MASSIVE TREE LOGIC ---
+        // We check if the current vertex is the closest one to our target coordinates
+        // and ensure we only place it once per chunk (in case multiple vertices are close).
+        const distanceToTarget = Math.sqrt(Math.pow(worldX - massiveTreeWorldX, 2) + Math.pow(worldZ - massiveTreeWorldZ, 2));
+        
+        // If we are within 5 units of the target and haven't placed it yet
+        if (distanceToTarget < 5 && !massiveTreePlacedInThisChunk) {
+            dummy.position.set(localX, y, localZ);
+            const massiveScale = 250.0; // The "Massive" part
+            dummy.scale.set(massiveScale, massiveScale, massiveScale);
+            dummy.rotation.y = 0; 
+            dummy.updateMatrix();
+            treeMatrices.push(dummy.matrix.clone());
+            
+            massiveTreePlacedInThisChunk = true; // Prevents duplicate placement in this chunk
+        }
+
+            // --- 3. REGULAR VEGETATION (Probability-based) ---
+            const seed = worldX * 12.9898 + worldZ * 78.233;
+            const rand = seededRandom(seed);
+
+            if (y < 200 && i % 15 === 0) {
+                if (rand > 0.98) { 
+                    dummy.position.set(localX, y, localZ);
+                    const scale = 1.0 + seededRandom(seed + 1) * 10.0;
+                    dummy.scale.set(scale, scale, scale);
+                    dummy.rotation.y = seededRandom(seed + 2) * Math.PI;
+                    dummy.updateMatrix();
+                    treeMatrices.push(dummy.matrix.clone());
+                } else if (rand > 0.8) { 
+                    dummy.position.set(localX, y, localZ);
+                    dummy.scale.setScalar(0.8 + seededRandom(seed + 3) * 0.5);
+                    dummy.rotation.y = seededRandom(seed + 4) * Math.PI;
+                    dummy.updateMatrix();
+                    grassMatrices.push(dummy.matrix.clone());
+                }
             }
         }
-    }
-
+    
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
 
     const group = new THREE.Group();
-    const terrain = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, flatShading: true }));
+    // Move the whole group to the chunk's world position
+    group.position.set(xOffset, 0, zOffset);
+
+    const terrain = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ 
+        vertexColors: true, 
+        roughness: 0.8, 
+        flatShading: true 
+    }));
     terrain.receiveShadow = true;
     terrain.castShadow = true;
-    terrain.position.set(xOffset, 0, zOffset);
     group.add(terrain);
 
-    // Instancing
     if (grassMatrices.length > 0) {
         const grass = new THREE.InstancedMesh(createGrassGeometry(), grassMat, grassMatrices.length);
         for (let j = 0; j < grassMatrices.length; j++) grass.setMatrixAt(j, grassMatrices[j]);
         grass.castShadow = true;
+        grass.receiveShadow = true;
         group.add(grass);
     }
+    
     if (treeMatrices.length > 0) {
         const trees = new THREE.InstancedMesh(createPineGeometry(), pineMat, treeMatrices.length);
         for (let j = 0; j < treeMatrices.length; j++) trees.setMatrixAt(j, treeMatrices[j]);
         trees.castShadow = true;
+        trees.receiveShadow = true;
         group.add(trees);
     }
 
     return group;
 }
-
 // Generate the grid
 for (let x = -4; x < 4; x++) {
     for (let z = -4; z < 4; z++) {
@@ -308,7 +366,7 @@ const players = {};
 let myMesh = null;
 
 const state = {
-    x: 0, y: 100, z: 0, // Spawn high
+    x: 50, y: 100, z: -50, // Spawn high
     yVel: 0,
     yaw: 0, pitch: 0,
     zoom: 40,
@@ -319,9 +377,27 @@ const state = {
 
 function createPlayerMesh(data) {
     const group = new THREE.Group();
-    const cube = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 3), new THREE.MeshStandardMaterial({ color: data.color }));
-    cube.castShadow = true;
-    group.add(cube);
+    
+    if (wizardModels.length > 0) {
+        // Simple hash: Sum of character codes in ID string
+        const idHash = data.id.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+        const modelIndex = idHash % wizardModels.length;
+        
+        const wizard = wizardModels[modelIndex].clone();
+        
+        // Adjust scale/rotation if your models come in sideways or tiny
+        wizard.scale.set(2, 2, 2); 
+        wizard.rotation.y = -2*Math.PI; // Face forward (neg fixes direction)
+         
+        group.add(wizard);
+    } else {
+        // Fallback cube if loader fails
+        console.log("FALLBACK FALLBACK")
+        console.log(wizardModels)
+        const cube = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 3), new THREE.MeshStandardMaterial({ color: data.color }));
+        cube.castShadow = true;
+        group.add(cube);
+    }
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -329,9 +405,12 @@ function createPlayerMesh(data) {
     ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.roundRect(0, 0, 512, 128, 20); ctx.fill();
     ctx.font = "bold 60px Arial"; ctx.fillStyle = "white"; ctx.textAlign = "center";
     ctx.fillText(data.name, 256, 85);
+    
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
+  
     sprite.scale.set(10, 2.5, 1);
-    sprite.position.y = 5;
+    sprite.position.y = 8;
+
     group.add(sprite);
     return group;
 }
@@ -373,18 +452,37 @@ document.addEventListener('mousemove', (e) => {
  * 8. NETWORK SYNC
  * ============================================================================
  */
-socket.on('currentPlayers', (srv) => {
-    Object.keys(srv).forEach(id => {
-        if (!players[id]) {
-            players[id] = createPlayerMesh(srv[id]);
-            scene.add(players[id]);
-            if (id === socket.id) myMesh = players[id];
+
+function initSocket() {
+    socket.on('currentPlayers', (srv) => {
+        Object.keys(srv).forEach(id => {
+            if (!players[id]) {
+                // Pass the ID explicitly so the model selection math works
+                players[id] = createPlayerMesh({ ...srv[id], id: id }); 
+                scene.add(players[id]);
+                if (id === socket.id) myMesh = players[id];
+            }
+        });
+    });
+
+    socket.on('newPlayer', (d) => { 
+        players[d.id] = createPlayerMesh({ ...d.player, id: d.id }); 
+        scene.add(players[d.id]); 
+    });
+
+    socket.on('playerMoved', (d) => { 
+        if (players[d.id] && d.id !== socket.id) {
+            players[d.id].position.set(d.x, d.y, d.z); 
         }
     });
-});
-socket.on('newPlayer', (d) => { players[d.id] = createPlayerMesh(d.player); scene.add(players[d.id]); });
-socket.on('playerMoved', (d) => { if (players[d.id] && d.id !== socket.id) players[d.id].position.set(d.x, d.y, d.z); });
-socket.on('playerDisconnected', (id) => { if (players[id]) { scene.remove(players[id]); delete players[id]; } });
+
+    socket.on('playerDisconnected', (id) => { 
+        if (players[id]) { 
+            scene.remove(players[id]); 
+            delete players[id]; 
+        } 
+    });
+}
 
 /**
  * ============================================================================
@@ -394,7 +492,10 @@ socket.on('playerDisconnected', (id) => { if (players[id]) { scene.remove(player
 function animate() {
     requestAnimationFrame(animate);
     const dt = clock.getElapsedTime();
-    foliageUniforms.time.value = dt;
+    
+    if (foliageShader) {
+      foliageShader.uniforms.time.value = dt;
+    }
 
     if (myMesh) {
         // Zoom Logic
@@ -458,4 +559,30 @@ function animate() {
 
     renderer.render(scene, camera);
 }
-animate();
+
+async function loadAssets() {
+    const loader = new GLTFLoader();
+    const loadPromises = modelFiles.map(file => {
+        return new Promise((resolve) => {
+            loader.load(file, (gltf) => {
+                // Pre-configure shadows for the model
+                gltf.scene.traverse(child => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+                resolve(gltf.scene);
+            });
+        });
+    });
+
+    const loadedScenes = await Promise.all(loadPromises);
+    wizardModels.push(...loadedScenes);
+    
+    initSocket();
+    socket.connect(); 
+    animate(); 
+}
+
+loadAssets();
